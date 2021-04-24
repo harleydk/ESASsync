@@ -336,7 +336,7 @@ namespace Synchronization.ESAS
         {
             IList<IEsasStagingDbDestination> strategies = new List<IEsasStagingDbDestination>();
 
-            Type[] typelist = GetTypesInNamespace(Assembly.GetExecutingAssembly(), "KP.Synchronization.ESAS.Synchronizations.EsasStagingDbSyncStrategies").Where(t => t.Name.EndsWith("EsasStagingDbDestination")).ToArray();
+            Type[] typelist = GetTypesInNamespace(Assembly.GetExecutingAssembly(), "Synchronization.ESAS.Synchronizations.EsasStagingDbSyncStrategies").Where(t => t.Name.EndsWith("EsasStagingDbDestination")).ToArray();
             for (int i = 0; i < typelist.Length; i++)
             {
                 var instance = Activator.CreateInstance(typelist[i], new object[] { logger });
