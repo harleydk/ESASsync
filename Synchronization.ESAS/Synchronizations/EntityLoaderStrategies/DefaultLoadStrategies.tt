@@ -1,0 +1,110 @@
+﻿<#@ template debug="false" hostspecific="true" language="C#" #>
+<#@ assembly name="System.Core" #>
+<#@ import namespace="System.Linq" #>
+<#@ import namespace="System.Text" #>
+<#@ import namespace="System.Collections.Generic" #>
+<#@ output extension=".cs" #>
+<#@ CleanupBehavior processor="T4VSHost" CleanupAfterProcessingtemplate="true" #>
+using Default; // Unchase OData connected service 'default' container name
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using Microsoft.Extensions.Logging;
+
+/*
+	Disse klasser er auto-genererede, på basis af deres korresponderende T4-template. 
+	Hvis der skal rettes i klasserne, skal rettelserne foregå i template'n!
+*/
+namespace Synchronization.ESAS.Synchronizations.EntityLoaderStrategies
+{
+<#
+	 string[] entityNames = new string[] {
+"Adgangskrav",
+"Afdeling",
+"Afslagsbegrundelse",
+"Aktivitetsudbud",
+"AndenAktivitet",
+"Ansoeger",
+"Ansoegning",
+"Ansoegningshandling",
+"Ansoegningskort",
+"AnsoegningskortOpsaetning",
+"AnsoegningskortTekst",
+"Ansoegningsopsaetning",
+"Bedoemmelse",
+"Bedoemmelsesrunde",
+"Bevisgrundlag",
+"Bilag",
+"Branche",
+"Eksamenstype",
+"Enkeltfag",
+"Erfaringer",
+"Fagpersonsrelation",
+"Fravaersaarsag",
+"Gebyrtype",
+//"", // Does not contains modifiedOn timestamp
+"GennemfoerelsesUddannelseselement",
+"GymnasielleFagkrav",
+"GymnasielleKarakterkrav",
+"Hold",
+"InstitutionVirksomhed",
+"Institutionsoplysninger",
+"Internationalisering",
+"KOTGruppe",
+"KOTGruppeTilmelding",
+"Karakter",
+"Kommunikation",
+"KurserSkoleophold",
+"Kvalifikationskriterie",
+"Kvalifikationspoint",
+"Land",
+"MeritRegistrering",
+"NationalAfgangsaarsag",
+"Omraadenummer",
+"Omraadenummeropsaetning",
+"Omraadespecialisering",
+"Person",
+"Personoplysning",
+"PlanlaegningsUddannelseselement",
+"Postnummer",
+"Praktikomraade",
+"Praktikophold",
+"Proeve",
+"Publicering",
+"RelationsStatus",
+"StruktureltUddannelseselement",
+"Studieforloeb",
+"StudieinaktivPeriode",
+"SystemUser",
+//"UdbudtPlanlaegningsuddannelseselement",
+"Uddannelsesaktivitet",
+"Uddannelsesstruktur",
+"UdlandsopholdAnsoegning",
+"VideregaaendeUddannelse"
+
+};
+            //https://github.com/StevenGilligan/AutoCompare
+  foreach (string entityName in entityNames)
+  {
+#>
+	// Denne klasse er auto-genereret. Enhver ændring vil blive overskrevet når auto-generingen kører på ny.
+    public class <#=entityName#>LoadStrategy : BaseLoadStrategy
+    {
+         public <#=entityName#>LoadStrategy(Container esasContainer, ILoadTimeStrategy loadTimeStrategy, ILogger logger) 
+			: base(esasContainer, loadTimeStrategy, logger)
+        {
+        }
+
+        protected override object[] LoadObjects(DateTime loadTimeCutoff, int indexToStartLoadFrom, int howManyRecordsToGet)
+        {
+            var modifiedObjects = _esasContainer.<#=entityName#>.Where(t => t.ModifiedOn >= loadTimeCutoff).Skip(indexToStartLoadFrom).Take(howManyRecordsToGet).ToArray();
+            return modifiedObjects;
+        }
+    }
+
+
+<#
+  } // foreach end
+#>
+
+} // namespace end

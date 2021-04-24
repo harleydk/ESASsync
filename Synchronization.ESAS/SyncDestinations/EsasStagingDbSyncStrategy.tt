@@ -1,0 +1,182 @@
+﻿<#@ template debug="false" hostspecific="true" language="C#" #>
+<#@ assembly name="System.Core" #>
+<#@ import namespace="System.Linq" #>
+<#@ import namespace="System.Text" #>
+<#@ import namespace="System.Collections.Generic" #>
+<#@ output extension=".cs" #>
+<#@ CleanupBehavior processor="T4VSHost" CleanupAfterProcessingtemplate="true" #>
+
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using Microsoft.Extensions.Logging;
+using Synchronization.ESAS.DAL;
+using Synchronization.ESAS.SyncDestinations;
+using KellermanSoftware.CompareNetObjects;
+using System.Data.Entity;
+using esas.Dynamics.Models.Contracts;
+
+/*
+	Disse klasser er auto-genererede, på basis af deres korresponderende T4-template. 
+	Hvis der skal rettes i klasserne, skal rettelserne foregå i template'n.
+*/
+namespace Synchronization.ESAS.Synchronizations.EsasStagingDbSyncStrategies
+{
+<#
+Dictionary<string,string> entitiesDictionary = new Dictionary<string, string>();
+entitiesDictionary.Add("Adgangskrav","esas_adgangskravId");
+entitiesDictionary.Add("Afdeling","esas_afdelingId");
+entitiesDictionary.Add("Afslagsbegrundelse","esas_afslagsbegrundelseId");
+entitiesDictionary.Add("Aktivitetsudbud","esas_aktivitetsudbudId");
+entitiesDictionary.Add("AndenAktivitet","esas_ansoegning_andre_aktiviteterid");
+entitiesDictionary.Add("Ansoeger","LeadId");
+entitiesDictionary.Add("Ansoegning","esas_ansoegningId");
+entitiesDictionary.Add("AnsoegningPlanlaegningsUddannelseselement","esas_ansoegning_esas_pueid");
+entitiesDictionary.Add("Ansoegningshandling","esas_ansoegningshandlingId");
+entitiesDictionary.Add("Ansoegningskort","esas_ansoegningskortid");
+entitiesDictionary.Add("AnsoegningskortOpsaetning","esas_ansoegningskortopsaetningid");
+entitiesDictionary.Add("AnsoegningskortTekst","esas_ansoegningskorttekstid");
+entitiesDictionary.Add("Ansoegningsopsaetning","esas_ansoegningsopsaetningId");
+entitiesDictionary.Add("Bedoemmelse","esas_bedoemmelseId");
+entitiesDictionary.Add("Bedoemmelsesrunde","esas_bedoemmelsesrundeId");
+entitiesDictionary.Add("Bevisgrundlag","esas_bevisgrundlagId");
+entitiesDictionary.Add("Bilag","esas_bilagid");
+entitiesDictionary.Add("Branche","esas_brancheId");
+entitiesDictionary.Add("Eksamenstype","esas_eksamenstypeId");
+entitiesDictionary.Add("Enkeltfag","esas_ansoegning_enkeltfagid");
+entitiesDictionary.Add("Erfaringer","esas_ansoegning_erfaringerid");
+entitiesDictionary.Add("Fagpersonsrelation","esas_fagpersonsrelationId");
+entitiesDictionary.Add("Fravaersaarsag","esas_fravaersaarsagId");
+entitiesDictionary.Add("Gebyrtype","esas_gebyrtypeid");
+entitiesDictionary.Add("GebyrtypePUERelation","esas_gebyrtype_esas_uddannelseselement_plid");
+entitiesDictionary.Add("GennemfoerelsesUddannelseselement","esas_uddannelseselement_gennemfoerelseId");
+entitiesDictionary.Add("GymnasielleFagkrav","esas_gymnasielle_fagkravId");
+entitiesDictionary.Add("GymnasielleKarakterkrav","esas_gymnasielle_karakterkravid");
+entitiesDictionary.Add("Hold","esas_holdId");
+entitiesDictionary.Add("InstitutionVirksomhed","AccountId");
+entitiesDictionary.Add("Institutionsoplysninger","esas_institutionsoplysningerId");
+entitiesDictionary.Add("Internationalisering","esas_internationaliseringId");
+entitiesDictionary.Add("KOTGruppe","esas_kot_gruppeid");
+entitiesDictionary.Add("KOTGruppeTilmelding","esas_kot_gruppe_tilmeldingid");
+entitiesDictionary.Add("Karakter","esas_karakterId");
+entitiesDictionary.Add("Kommunikation","esas_kommunikationId");
+entitiesDictionary.Add("KurserSkoleophold","esas_ansoegning_kurser_og_skoleopholdid");
+entitiesDictionary.Add("Kvalifikationskriterie","esas_kvalifikationskriterieid");
+entitiesDictionary.Add("KvalifikationskriterieOmraadenummeropsaetning","esas_kvalifikationskriterier_for_omraadenumid");
+entitiesDictionary.Add("Kvalifikationspoint","esas_kvalifikationspointid");
+entitiesDictionary.Add("KvalifikationspointAnsoegning","esas_kvalifikationspoint_esas_ansoegningid");
+entitiesDictionary.Add("Land","esas_landId");
+entitiesDictionary.Add("MeritRegistrering","esas_meritregistreringId");
+entitiesDictionary.Add("NationalAfgangsaarsag","esas_national_afgangsaarsagId");
+entitiesDictionary.Add("Omraadenummer","esas_omraadenummerId");
+entitiesDictionary.Add("Omraadenummeropsaetning","esas_omraadeopsaetningid");
+entitiesDictionary.Add("Omraadespecialisering","esas_omraadespecialiseringid");
+entitiesDictionary.Add("OptionSetValueString","Id");
+entitiesDictionary.Add("Person","ContactId");
+entitiesDictionary.Add("Personoplysning","esas_personoplysningerId");
+entitiesDictionary.Add("PlanlaegningsUddannelseselement","esas_uddannelseselement_planlaegningId");
+entitiesDictionary.Add("Postnummer","esas_postnummerId");
+entitiesDictionary.Add("Praktikomraade","esas_praktikomraadeId");
+entitiesDictionary.Add("Praktikophold","esas_praktikopholdId");
+entitiesDictionary.Add("Proeve","esas_ansoegning_proeveid");
+entitiesDictionary.Add("Publicering","esas_publiceringid");
+entitiesDictionary.Add("RelationsStatus","esas_relations_statusId");
+entitiesDictionary.Add("StruktureltUddannelseselement","esas_uddannelseselementId");
+entitiesDictionary.Add("Studieforloeb","esas_studieforloebId");
+entitiesDictionary.Add("StudieinaktivPeriode","esas_studieinaktiv_periodeId");
+entitiesDictionary.Add("SystemUser","SystemUserId");
+entitiesDictionary.Add("Uddannelsesaktivitet","esas_uddannelsesaktivitetId");
+entitiesDictionary.Add("Uddannelsesstruktur","esas_uddannelsesstrukturId");
+entitiesDictionary.Add("UdlandsopholdAnsoegning","esas_ansoegning_udlandsopholdid");
+entitiesDictionary.Add("VideregaaendeUddannelse","esas_ansoegning_videregaaende_uddannelseid");
+            
+  foreach (var entity in entitiesDictionary)
+  {
+#>
+	// Denne klasse er auto-genereret. Enhver ændring vil blive overskrevet når auto-generingen kører på ny.
+    public class <#=entity.Key#>EsasStagingDbDestination : IEsasStagingDbDestination
+    {
+		private ComparisonConfig cc = new ComparisonConfig();
+        private CompareLogic compareLogic;
+
+        public bool IsStrategyMatch(Type type)
+        {
+            if (type == typeof(<#=entity.Key#>))
+                return true;
+
+            return false;
+        }
+
+        public void Deliver(object[] objects, IEsasDbContextFactory dbContextFactory)
+        {
+			System.Diagnostics.Debug.WriteLine("Delivering by " + this.GetType().Name);
+			// initialize compare-logic
+		    cc.CompareChildren = false;
+            compareLogic = new CompareLogic(cc);
+
+			List<<#=entity.Key#>> nyeObjekter = new List<<#=entity.Key#>>();
+
+			var dbContext = dbContextFactory.CreateDbContext();
+			using (dbContext)
+			{
+
+	            var existingEntities = dbContext.<#=entity.Key#>.AsNoTracking();
+				int numOfChanges = 0;
+			
+				for( int i=0; i < objects.Length; i++)
+	            {
+					numOfChanges++;
+					<#=entity.Key#> freshObject = (<#=entity.Key#>) objects[i];
+	
+					var existingObject = existingEntities.SingleOrDefault(x => x.<#=entity.Value #> == freshObject.<#=entity.Value #>);
+					if (existingObject == null)
+	                {
+	                    // tilføj til listen over nye objekter, som vi bulk-insert'er nedenfor
+	                    nyeObjekter.Add(freshObject);
+	                }
+	                else
+	                {
+	                    // update
+	                    bool objectHasChanged = HasObjectChanged(freshObject, existingObject);
+	                    if (objectHasChanged)
+	                    {
+						    dbContext.Entry(existingObject).State = EntityState.Modified;
+	                        dbContext.Entry(existingObject).CurrentValues.SetValues(freshObject);
+	                    }
+	                }
+	
+					if ( numOfChanges % 1000 == 0)
+					  System.Diagnostics.Debug.WriteLine(numOfChanges);
+	            }
+
+				dbContext.SaveChanges();
+            }
+
+			// Indsæt evt. nye objekter, 1000 af gangen
+            for (int i = 0; i < nyeObjekter.Count(); i = i + 1000)
+            {
+                var items = nyeObjekter.Skip(i).Take(1000);
+                using (var foobar = new EsasDbContextFactory().CreateDbContext())
+                {
+                    foobar.<#=entity.Key#>.AddRange(items);
+                    foobar.SaveChanges();
+                }
+            }
+
+		}
+
+        private bool HasObjectChanged(object freshObject, object existingObject)
+        {
+            var a = freshObject as <#=entity.Key#>;
+            var b = existingObject as <#=entity.Key#>;
+
+            var resul = compareLogic.Compare(a, b);
+            return !resul.AreEqual;
+        }
+    }
+
+<#
+  } // foreach end
+#>
+
+} // namespace end
