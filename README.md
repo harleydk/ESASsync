@@ -2,6 +2,8 @@
 
 Referenceimplementering af en .NET windows service der synkroniserer data fra det studieadministrative system ESAS til en lokal MSSQL db.
 
+Synkroniseringen er ment at foregå kontinuérligt, hvorved aftager altid vil have et tidstro 'spejl' af ESAS-data. Denne kontinuitet opnås ved filtrering på datas seneste opdateringstidsstempel ('ModifiedOn'), hvorved belastningen på OData-servicen holdes på et absolut minimum.
+
 [Københavns Professionshøjskole](https://kp.dk/) har lagt denne løsning ud som open source, med henblik på at vidensdele/inspirere. Al anvendelse af koden er på eget ansvar.
 
 # Visual Studio løsningen består af 3 dele:
