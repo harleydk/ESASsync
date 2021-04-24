@@ -6,7 +6,7 @@
             Username,
             Password,
             Domain,
-            CertifikatPassword,
-            CertifikatSti;
+            CertificatePassword,
+            CertificatePath;
     }
 }

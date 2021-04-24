@@ -26,12 +26,12 @@ namespace Synchronization.ESAS.Synchronizations.EsasStagingDbSyncStrategies
 Dictionary<string,string> entitiesDictionary = new Dictionary<string, string>();
 entitiesDictionary.Add("Adgangskrav","esas_adgangskravId");
 entitiesDictionary.Add("Afdeling","esas_afdelingId");
+entitiesDictionary.Add("Afdelingsniveau","esas_afdelingsniveauId");
 entitiesDictionary.Add("Afslagsbegrundelse","esas_afslagsbegrundelseId");
 entitiesDictionary.Add("Aktivitetsudbud","esas_aktivitetsudbudId");
 entitiesDictionary.Add("AndenAktivitet","esas_ansoegning_andre_aktiviteterid");
 entitiesDictionary.Add("Ansoeger","LeadId");
 entitiesDictionary.Add("Ansoegning","esas_ansoegningId");
-entitiesDictionary.Add("AnsoegningPlanlaegningsUddannelseselement","esas_ansoegning_esas_pueid");
 entitiesDictionary.Add("Ansoegningshandling","esas_ansoegningshandlingId");
 entitiesDictionary.Add("Ansoegningskort","esas_ansoegningskortid");
 entitiesDictionary.Add("AnsoegningskortOpsaetning","esas_ansoegningskortopsaetningid");
@@ -39,7 +39,7 @@ entitiesDictionary.Add("AnsoegningskortTekst","esas_ansoegningskorttekstid");
 entitiesDictionary.Add("Ansoegningsopsaetning","esas_ansoegningsopsaetningId");
 entitiesDictionary.Add("Bedoemmelse","esas_bedoemmelseId");
 entitiesDictionary.Add("Bedoemmelsesrunde","esas_bedoemmelsesrundeId");
-entitiesDictionary.Add("Bevisgrundlag","esas_bevisgrundlagId");
+//entitiesDictionary.Add("Bevisgrundlag","esas_bevisgrundlagId"); -- sløjfet, for now.
 entitiesDictionary.Add("Bilag","esas_bilagid");
 entitiesDictionary.Add("Branche","esas_brancheId");
 entitiesDictionary.Add("Eksamenstype","esas_eksamenstypeId");
@@ -48,11 +48,11 @@ entitiesDictionary.Add("Erfaringer","esas_ansoegning_erfaringerid");
 entitiesDictionary.Add("Fagpersonsrelation","esas_fagpersonsrelationId");
 entitiesDictionary.Add("Fravaersaarsag","esas_fravaersaarsagId");
 entitiesDictionary.Add("Gebyrtype","esas_gebyrtypeid");
-entitiesDictionary.Add("GebyrtypePUERelation","esas_gebyrtype_esas_uddannelseselement_plid");
 entitiesDictionary.Add("GennemfoerelsesUddannelseselement","esas_uddannelseselement_gennemfoerelseId");
 entitiesDictionary.Add("GymnasielleFagkrav","esas_gymnasielle_fagkravId");
 entitiesDictionary.Add("GymnasielleKarakterkrav","esas_gymnasielle_karakterkravid");
 entitiesDictionary.Add("Hold","esas_holdId");
+entitiesDictionary.Add("Indskrivningsform","esas_indskrivningsformId");
 entitiesDictionary.Add("InstitutionVirksomhed","AccountId");
 entitiesDictionary.Add("Institutionsoplysninger","esas_institutionsoplysningerId");
 entitiesDictionary.Add("Internationalisering","esas_internationaliseringId");
@@ -60,11 +60,10 @@ entitiesDictionary.Add("KOTGruppe","esas_kot_gruppeid");
 entitiesDictionary.Add("KOTGruppeTilmelding","esas_kot_gruppe_tilmeldingid");
 entitiesDictionary.Add("Karakter","esas_karakterId");
 entitiesDictionary.Add("Kommunikation","esas_kommunikationId");
+entitiesDictionary.Add("Kommune","esas_kommuneId");
 entitiesDictionary.Add("KurserSkoleophold","esas_ansoegning_kurser_og_skoleopholdid");
 entitiesDictionary.Add("Kvalifikationskriterie","esas_kvalifikationskriterieid");
-entitiesDictionary.Add("KvalifikationskriterieOmraadenummeropsaetning","esas_kvalifikationskriterier_for_omraadenumid");
 entitiesDictionary.Add("Kvalifikationspoint","esas_kvalifikationspointid");
-entitiesDictionary.Add("KvalifikationspointAnsoegning","esas_kvalifikationspoint_esas_ansoegningid");
 entitiesDictionary.Add("Land","esas_landId");
 entitiesDictionary.Add("MeritRegistrering","esas_meritregistreringId");
 entitiesDictionary.Add("NationalAfgangsaarsag","esas_national_afgangsaarsagId");
@@ -81,6 +80,9 @@ entitiesDictionary.Add("Praktikophold","esas_praktikopholdId");
 entitiesDictionary.Add("Proeve","esas_ansoegning_proeveid");
 entitiesDictionary.Add("Publicering","esas_publiceringid");
 entitiesDictionary.Add("RelationsStatus","esas_relations_statusId");
+entitiesDictionary.Add("Rekvirenttype","esas_rekvirenttypeId");
+entitiesDictionary.Add("Samlaesning","esas_samlaesningId");
+entitiesDictionary.Add("Specialisering","esas_ansoegning_specialiseringid");
 entitiesDictionary.Add("StruktureltUddannelseselement","esas_uddannelseselementId");
 entitiesDictionary.Add("Studieforloeb","esas_studieforloebId");
 entitiesDictionary.Add("StudieinaktivPeriode","esas_studieinaktiv_periodeId");
@@ -98,6 +100,12 @@ entitiesDictionary.Add("VideregaaendeUddannelse","esas_ansoegning_videregaaende_
     {
 		private ComparisonConfig cc = new ComparisonConfig();
         private CompareLogic compareLogic;
+		private ILogger _logger;
+
+		public <#=entity.Key#>EsasStagingDbDestination(ILogger logger)
+		{
+			_logger = logger;
+		}
 
         public bool IsStrategyMatch(Type type)
         {
@@ -109,69 +117,137 @@ entitiesDictionary.Add("VideregaaendeUddannelse","esas_ansoegning_videregaaende_
 
         public void Deliver(object[] objects, IEsasDbContextFactory dbContextFactory)
         {
+			_logger.LogInformation("Klar til opdatering/tilføjelse af objekter.");
 			System.Diagnostics.Debug.WriteLine("Delivering by " + this.GetType().Name);
 			// initialize compare-logic
 		    cc.CompareChildren = false;
+            cc.IgnoreObjectTypes = true; // ignorer objekt-type - fordi objekter fra Entity Frameworket får en 'dynamic' type, som ikke er sammenlignelig med kp.domain-typen.
             compareLogic = new CompareLogic(cc);
 
 			List<<#=entity.Key#>> nyeObjekter = new List<<#=entity.Key#>>();
+            int antalÆndredeObjekter = 0;
 
 			var dbContext = dbContextFactory.CreateDbContext();
 			using (dbContext)
 			{
-
-	            var existingEntities = dbContext.<#=entity.Key#>.AsNoTracking();
-				int numOfChanges = 0;
+	            var existingEntities = dbContext.<#=entity.Key#>;
+				int recordNo = 0;
 			
 				for( int i=0; i < objects.Length; i++)
 	            {
-					numOfChanges++;
+					recordNo++;
 					<#=entity.Key#> freshObject = (<#=entity.Key#>) objects[i];
 	
 					var existingObject = existingEntities.SingleOrDefault(x => x.<#=entity.Value #> == freshObject.<#=entity.Value #>);
 					if (existingObject == null)
 	                {
-	                    // tilføj til listen over nye objekter, som vi bulk-insert'er nedenfor
+                        // tilføj til listen over nye objekter, som vi bulk-insert'er nedenfor
+                        string newObjectMessage = $"Sync-delivery: new object (of type <#=entity.Key#>) with id {freshObject.<#=entity.Value #>}";
+                        _logger.LogInformation(newObjectMessage);
+
 	                    nyeObjekter.Add(freshObject);
 	                }
 	                else
 	                {
 	                    // update
-	                    bool objectHasChanged = HasObjectChanged(freshObject, existingObject);
-	                    if (objectHasChanged)
+                        ComparisonResult objectChangeResult = ObjectChangeResult(freshObject, existingObject);
+                        bool objectHasChanged = !objectChangeResult.AreEqual;
+                        if (objectHasChanged)
 	                    {
-						    dbContext.Entry(existingObject).State = EntityState.Modified;
-	                        dbContext.Entry(existingObject).CurrentValues.SetValues(freshObject);
+                            string newObjectMessage = $"Sync-delivery: changed object (of type <#=entity.Key#>) {freshObject.<#=entity.Value #>}. Changes to '{objectChangeResult.DifferencesString}";
+                            _logger.LogInformation(newObjectMessage);
+                            try
+ 
+                            {
+                                 antalÆndredeObjekter += 1;
+						        dbContext.Entry(existingObject).State = EntityState.Modified; // remember to keep the 'existingObject' tracked by EF - or we'll get an error as we try to update the existing navigational properties (with a null-value, from the 'freshObject').
+	                            dbContext.Entry(existingObject).CurrentValues.SetValues(freshObject);
+                                dbContext.SaveChanges();
+                            }
+                            catch( Exception ex)
+                            {
+                             _logger.LogError(ex.Message, ex);
+                             throw ex; // kast den oprindelig exception for at forlade synkroniseringen. Ellers ville denne blive markeret som en succes, og timestamp'et vil blive mejslet i sten - og fortidige opdateringer vil blive skippet, dersom der er et nyere timestamp at tage i betragtning.
+                            }
+                           
 	                    }
 	                }
 	
-					if ( numOfChanges % 1000 == 0)
-					  System.Diagnostics.Debug.WriteLine(numOfChanges);
+					// if ( recordNo % 1000 == 0)
+                    // {
+					//   System.Diagnostics.Debug.WriteLine(recordNo);
+                    //   dbContext.SaveChanges();
+                    // }
 	            }
 
-				dbContext.SaveChanges();
+				// dbContext.SaveChanges();
             }
 
-			// Indsæt evt. nye objekter, 1000 af gangen
-            for (int i = 0; i < nyeObjekter.Count(); i = i + 1000)
+			if (nyeObjekter.Any())
             {
-                var items = nyeObjekter.Skip(i).Take(1000);
-                using (var foobar = new EsasDbContextFactory().CreateDbContext())
+                _logger.LogInformation($"Fandt {nyeObjekter.Count()} til indsættelse.");
+                try
                 {
-                    foobar.<#=entity.Key#>.AddRange(items);
-                    foobar.SaveChanges();
+                    using (var context = new EsasDbContextFactory().CreateDbContext())
+                    {
+                            context.<#=entity.Key#>.AddRange(nyeObjekter);
+                            context.SaveChanges();
+                    }
+                }
+                catch (Exception ex) when (ex.InnerException.Message.StartsWith("An error occurred while updating the entries. See the inner exception for details."))
+                {
+                    _logger.LogError("Der opstod en fejl i.f.m. tilføjelsen af samtlige nye objekter. Denne fejl skyldes sandsynligvis dét at en reference ikke kunne opfyldes, eksempelvis som ved indsættelse af en GUE der refererer til et ikke-eksisterende studieforløb. Vil i stedet gennemløbe hver enkelt record, og indsætte disse enkeltvis.");
+
+                    _logger.LogInformation("Indsætter records enkelt-vis.");
+                    using (var context = new EsasDbContextFactory().CreateDbContext())
+                    {
+                        context.Configuration.AutoDetectChangesEnabled = false; // just adding, no need to track'em.
+                        for (int i = 0; i < nyeObjekter.Count(); i++)
+                        {
+                            var nytObjekt = nyeObjekter[i];
+
+                            _logger.LogInformation($"Indsætter objekt med id '{nyeObjekter[i].<#=entity.Value #>.ToString()}'");
+                            try
+                            {
+                                context.<#=entity.Key#>.Add(nytObjekt);
+                                context.SaveChanges();
+                                _logger.LogInformation($"Objekt med id '{nytObjekt.<#=entity.Value #>.ToString()}' blev indsat.");
+                            }
+                            catch (Exception exe) when (exe.InnerException.Message.StartsWith("An error occurred while updating the entries. See the inner exception for details."))
+                            {
+                                string relationExceptionMessage = exe.InnerException.InnerException.Message;
+                                _logger.LogError($"Objekt med id '{ nytObjekt.<#=entity.Value #>.ToString()}' kunne ikke indsættes pga. dårlige db-relationer ('{relationExceptionMessage}'). Springer videre til næste.");
+                                //detach the entry, or EF will try and add it again. And again. 
+                                context.Entry(nytObjekt).State = EntityState.Detached;
+                                continue;
+                            }
+                            catch (Exception excep)
+                            {
+                                _logger.LogError($"Objekt med id '{ nytObjekt.<#=entity.Value #>.ToString()}' kunne ikke indsættes pga. '{ excep.Message }'. Springer videre til næste.");
+                                //detach the entry, or EF will try and add it again. And again. 
+                                context.Entry(nytObjekt).State = EntityState.Detached;
+                                continue;
+                            }
+                        }
+                    }
+
+                    
+                    _logger.LogError(ex.Message, ex);
+                    throw ex; // kast den oprindelig exception for at forlade synkroniseringen. Ellers ville denne blive markeret som en succes, og timestamp'et vil blive mejslet i sten - og fortidige opdateringer vil blive skippet, dersom der er et nyere timestamp at tage i betragtning.
                 }
             }
 
+            _logger.LogInformation("Antal nye objekter: " + nyeObjekter.Count());
+            _logger.LogInformation("Antal ændrede objekter: " + antalÆndredeObjekter);
 		}
 
-        private bool HasObjectChanged(object freshObject, object existingObject)
+        private ComparisonResult ObjectChangeResult(object freshObject, object existingObject)
         {
             var a = freshObject as <#=entity.Key#>;
             var b = existingObject as <#=entity.Key#>;
-
-            var resul = compareLogic.Compare(a, b);
-            return !resul.AreEqual;
+            
+            ComparisonResult resul = compareLogic.Compare(a, b);
+            return resul;
         }
     }
 

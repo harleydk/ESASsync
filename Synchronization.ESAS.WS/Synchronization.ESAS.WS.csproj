@@ -50,6 +50,10 @@
     <Reference Include="System.Buffers, Version=4.0.3.0, Culture=neutral, PublicKeyToken=cc7b13ffcd2ddd51, processorArchitecture=MSIL">
       <HintPath>..\packages\System.Buffers.4.5.1\lib\net461\System.Buffers.dll</HintPath>
     </Reference>
+    <Reference Include="System.ComponentModel.Annotations, Version=4.2.1.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a, processorArchitecture=MSIL">
+      <HintPath>..\packages\System.ComponentModel.Annotations.4.7.0\lib\net461\System.ComponentModel.Annotations.dll</HintPath>
+    </Reference>
+    <Reference Include="System.ComponentModel.DataAnnotations" />
     <Reference Include="System.Core" />
     <Reference Include="System.Diagnostics.DiagnosticSource, Version=4.0.5.0, Culture=neutral, PublicKeyToken=cc7b13ffcd2ddd51, processorArchitecture=MSIL">
       <HintPath>..\packages\System.Diagnostics.DiagnosticSource.4.7.1\lib\net46\System.Diagnostics.DiagnosticSource.dll</HintPath>
@@ -84,22 +88,102 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="Connected Services\EsasOdataService\Reference.cs" />
+    <Compile Include="Connected Services\OData Service\Adgangskrav.cs" />
+    <Compile Include="Connected Services\OData Service\Afdeling.cs" />
+    <Compile Include="Connected Services\OData Service\Afdelingsniveau.cs" />
+    <Compile Include="Connected Services\OData Service\Afslagsbegrundelse.cs" />
+    <Compile Include="Connected Services\OData Service\Aktivitetsudbud.cs" />
+    <Compile Include="Connected Services\OData Service\AndenAktivitet.cs" />
+    <Compile Include="Connected Services\OData Service\Ansoeger.cs" />
+    <Compile Include="Connected Services\OData Service\Ansoegning.cs" />
+    <Compile Include="Connected Services\OData Service\Ansoegningshandling.cs" />
+    <Compile Include="Connected Services\OData Service\Ansoegningskort.cs" />
+    <Compile Include="Connected Services\OData Service\AnsoegningskortOpsaetning.cs" />
+    <Compile Include="Connected Services\OData Service\AnsoegningskortTekst.cs" />
+    <Compile Include="Connected Services\OData Service\Ansoegningsopsaetning.cs" />
+    <Compile Include="Connected Services\OData Service\Bedoemmelse.cs" />
+    <Compile Include="Connected Services\OData Service\Bedoemmelsesrunde.cs" />
+    <Compile Include="Connected Services\OData Service\Bekendtgoerelse.cs" />
+    <Compile Include="Connected Services\OData Service\Betalingstilsagn.cs" />
+    <Compile Include="Connected Services\OData Service\Bevisgrundlag.cs" />
+    <Compile Include="Connected Services\OData Service\Bilag.cs" />
+    <Compile Include="Connected Services\OData Service\Branche.cs" />
+    <Compile Include="Connected Services\OData Service\BusinessUnit.cs" />
+    <Compile Include="Connected Services\OData Service\Eksamenstype.cs" />
+    <Compile Include="Connected Services\OData Service\Enkeltfag.cs" />
+    <Compile Include="Connected Services\OData Service\EntityReference.cs" />
+    <Compile Include="Connected Services\OData Service\Erfaringer.cs" />
+    <Compile Include="Connected Services\OData Service\ExtensionMethods.cs" />
+    <Compile Include="Connected Services\OData Service\Fag.cs" />
+    <Compile Include="Connected Services\OData Service\Fagpersonsrelation.cs" />
+    <Compile Include="Connected Services\OData Service\Faktureringsgrundlag.cs" />
+    <Compile Include="Connected Services\OData Service\Faktureringsgrundlagslinje.cs" />
+    <Compile Include="Connected Services\OData Service\Fravaersaarsag.cs" />
+    <Compile Include="Connected Services\OData Service\Gebyrtype.cs" />
+    <Compile Include="Connected Services\OData Service\GennemfoerelsesUddannelseselement.cs" />
+    <Compile Include="Connected Services\OData Service\GymnasielleFagkrav.cs" />
+    <Compile Include="Connected Services\OData Service\GymnasielleKarakterkrav.cs" />
+    <Compile Include="Connected Services\OData Service\Hold.cs" />
+    <Compile Include="Connected Services\OData Service\Indskrivningsform.cs" />
+    <Compile Include="Connected Services\OData Service\Institutionsoplysninger.cs" />
+    <Compile Include="Connected Services\OData Service\InstitutionVirksomhed.cs" />
+    <Compile Include="Connected Services\OData Service\Internationalisering.cs" />
+    <Compile Include="Connected Services\OData Service\Karakter.cs" />
+    <Compile Include="Connected Services\OData Service\Kommune.cs" />
+    <Compile Include="Connected Services\OData Service\Kommunikation.cs" />
+    <Compile Include="Connected Services\OData Service\KOTGruppe.cs" />
+    <Compile Include="Connected Services\OData Service\KOTGruppeTilmelding.cs" />
+    <Compile Include="Connected Services\OData Service\KurserSkoleophold.cs" />
+    <Compile Include="Connected Services\OData Service\Kvalifikationskriterie.cs" />
+    <Compile Include="Connected Services\OData Service\Kvalifikationspoint.cs" />
+    <Compile Include="Connected Services\OData Service\Land.cs" />
+    <Compile Include="Connected Services\OData Service\MeritRegistrering.cs" />
+    <Compile Include="Connected Services\OData Service\NationalAfgangsaarsag.cs" />
+    <Compile Include="Connected Services\OData Service\Omraadenummer.cs" />
+    <Compile Include="Connected Services\OData Service\Omraadenummeropsaetning.cs" />
+    <Compile Include="Connected Services\OData Service\Omraadespecialisering.cs" />
+    <Compile Include="Connected Services\OData Service\OptionSetValue.cs" />
+    <Compile Include="Connected Services\OData Service\OptionSetValueString.cs" />
+    <Compile Include="Connected Services\OData Service\Periode.cs" />
+    <Compile Include="Connected Services\OData Service\Person.cs" />
+    <Compile Include="Connected Services\OData Service\Personoplysning.cs" />
+    <Compile Include="Connected Services\OData Service\PlanlaegningsUddannelseselement.cs" />
+    <Compile Include="Connected Services\OData Service\Postnummer.cs" />
+    <Compile Include="Connected Services\OData Service\Praktikomraade.cs" />
+    <Compile Include="Connected Services\OData Service\Praktikophold.cs" />
+    <Compile Include="Connected Services\OData Service\Proeve.cs" />
+    <Compile Include="Connected Services\OData Service\ProeveIkkeGymEllerVideregNiveau.cs" />
+    <Compile Include="Connected Services\OData Service\Publicering.cs" />
+    <Compile Include="Connected Services\OData Service\Reference.cs" />
+    <Compile Include="Connected Services\OData Service\Rekvirenttype.cs" />
+    <Compile Include="Connected Services\OData Service\RelationsStatus.cs" />
+    <Compile Include="Connected Services\OData Service\Samlaesning.cs" />
+    <Compile Include="Connected Services\OData Service\Specialisering.cs" />
+    <Compile Include="Connected Services\OData Service\Sprog.cs" />
+    <Compile Include="Connected Services\OData Service\StruktureltUddannelseselement.cs" />
+    <Compile Include="Connected Services\OData Service\Studieforloeb.cs" />
+    <Compile Include="Connected Services\OData Service\StudieinaktivPeriode.cs" />
+    <Compile Include="Connected Services\OData Service\SupplerendeKursus.cs" />
+    <Compile Include="Connected Services\OData Service\SystemUser.cs" />
+    <Compile Include="Connected Services\OData Service\Team.cs" />
+    <Compile Include="Connected Services\OData Service\Uddannelsesaktivitet.cs" />
+    <Compile Include="Connected Services\OData Service\Uddannelsesstruktur.cs" />
+    <Compile Include="Connected Services\OData Service\UdlandsopholdAnsoegning.cs" />
+    <Compile Include="Connected Services\OData Service\VideregaaendeUddannelse.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
-  </ItemGroup>
-  <ItemGroup>
-    <EmbeddedResource Include="Connected Services\EsasOdataService\EsasOdataServiceCsdl.xml" />
-    <Content Include="esas_metadata.xml">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
+    <Compile Include="ReferencePartial.cs" />
   </ItemGroup>
   <ItemGroup>
     <None Include="app.config" />
-    <None Include="Connected Services\EsasOdataService\ConnectedService.json" />
+    <None Include="Connected Services\OData Service\ConnectedService.json" />
     <None Include="packages.config" />
   </ItemGroup>
   <ItemGroup>
     <WCFMetadata Include="Connected Services\" />
+  </ItemGroup>
+  <ItemGroup>
+    <Content Include="Connected Services\OData Service\OData ServiceCsdl.xml" />
+    <Content Include="esas_metadata.xml" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>

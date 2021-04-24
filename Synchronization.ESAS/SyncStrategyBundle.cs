@@ -1,5 +1,5 @@
-﻿using Synchronization.ESAS.Synchronizations;
-using Microsoft.Extensions.Logging;
+﻿using Microsoft.Extensions.Logging;
+using Synchronization.ESAS.Synchronizations;
 using System;
 using System.Collections.Generic;
 
@@ -14,7 +14,7 @@ namespace Synchronization.ESAS
         private readonly IEnumerable<IEsasSyncStrategy> _syncStrategies;
         private readonly ILogger _logger;
 
-        public SyncStrategyBundle(TimeSpan syncTime, IEnumerable<IEsasSyncStrategy> syncStrategies, ILogger logger )
+        public SyncStrategyBundle(TimeSpan syncTime, IEnumerable<IEsasSyncStrategy> syncStrategies, ILogger logger)
         {
             _syncTime = syncTime;
             _syncStrategies = syncStrategies;
@@ -31,13 +31,18 @@ namespace Synchronization.ESAS
 
         public void ExecuteSync()
         {
-            _logger.LogInformation($"Logging ");
-            foreach( IEsasSyncStrategy esasSyncStrategy in _syncStrategies)
+            foreach (IEsasSyncStrategy esasSyncStrategy in _syncStrategies)
             {
-                string syncStrategyStartMessage = $"{System.Environment.MachineName}: Executing sync-strategy {esasSyncStrategy}.";
+                string syncStrategyStartMessage = $"Sync-strategy: Executing sync-strategy {esasSyncStrategy} - start.";
                 System.Diagnostics.Debug.WriteLine(syncStrategyStartMessage);
                 _logger.LogInformation(syncStrategyStartMessage);
+
                 esasSyncStrategy.ExecuteSyncStrategy();
+
+                syncStrategyStartMessage = $"Sync-strategy: Executing sync-strategy {esasSyncStrategy} - end.";
+                System.Diagnostics.Debug.WriteLine(syncStrategyStartMessage);
+                _logger.LogInformation(syncStrategyStartMessage);
+
             }
         }
     }

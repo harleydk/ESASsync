@@ -7,9 +7,5 @@
             EsasStagingDbContext dbContext = new EsasStagingDbContext();
             return dbContext;
         }
-
     }
-
-
-
 }

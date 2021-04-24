@@ -1,35 +1,36 @@
 ﻿using System;
 using System.Diagnostics;
 using System.Linq;
-using Synchronization.ESAS.DAL.Models;
 using Microsoft.Extensions.Logging;
+using Synchronization.ESAS.DAL.Models;
 
 namespace Synchronization.ESAS.Synchronizations.EntityLoaderStrategies
 {
-
     /// <summary>
     /// Specific loader-strategy for 'OptionSetValueString' entiteten - denne har ikke et 'modified timestamp'
     /// som de øvrige entiteter.
     /// </summary>
     public class OptionSetValueLoadStrategy : IEsasEntitiesLoaderStrategy
     {
-        private readonly Default.Container _esasContainer;
+        private Default.Container _esasContainer;
+        private readonly EsasWsContextFactory _esasContextFactory;
         private readonly ILogger _logger;
 
-        public OptionSetValueLoadStrategy(Default.Container esasContainer, ILogger logger)
+        public OptionSetValueLoadStrategy(EsasWsContextFactory esasContextFactory, ILogger logger)
         {
-            _esasContainer = esasContainer;
+            _esasContextFactory = esasContextFactory;
             _logger = logger;
         }
 
-
-        public (EsasLoadResult esasLoadResult, object[] loadedObjects) Load(int indexToStartLoadFrom, int howManyRecordsToGet)
+        public (EsasLoadResult esasLoadResult, object[] loadedObjects) Load()
         {
+            _esasContainer = _esasContextFactory.Create();
+
             EsasLoadResult loadResult = new EsasLoadResult();
             loadResult.LoaderStrategyName = this.GetType().Name;
-            loadResult.LoadStartTime = DateTime.Now;
-            DateTime deltaTimeLoadvalue = new DateTime(1963, 11, 22); // J.F.K. RIP
-            loadResult.ModifiedOnDateTimeValue = deltaTimeLoadvalue;
+            loadResult.LoadStartTimeUTC = DateTime.UtcNow;
+            DateTime deltaTimeLoadvalue = new DateTime(1963, 11, 22).ToUniversalTime(); // J.F.K. RIP
+            loadResult.ModifiedOnDateTimeUTC = deltaTimeLoadvalue;
 
             object[] loadedObjects = null;
             try
@@ -50,7 +51,7 @@ namespace Synchronization.ESAS.Synchronizations.EntityLoaderStrategies
                 loadResult.Message = $"Exception: {ex.Message}";
             }
 
-            loadResult.LoadEndTime = DateTime.Now;
+            loadResult.LoadEndTimeUTC = DateTime.UtcNow;
             return (loadResult, loadedObjects);
         }
     }

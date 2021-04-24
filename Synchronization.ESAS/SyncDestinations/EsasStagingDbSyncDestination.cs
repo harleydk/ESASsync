@@ -5,7 +5,6 @@ using System;
 using Synchronization.ESAS.DAL.Models;
 using System.Diagnostics;
 
-
 namespace Synchronization.ESAS.SyncDestinations
 {
     public class EsasStagingDbSyncDestination : IEsasSyncDestination
@@ -22,8 +21,8 @@ namespace Synchronization.ESAS.SyncDestinations
         public EsasSendResult Deliver(object[] objects)
         {
             EsasSendResult esasSendResult = new EsasSendResult();
-            esasSendResult.SendDestinationStrategyName = GetType().Name;
-            esasSendResult.SendStartTime = DateTime.Now;
+            esasSendResult.SendDestinationStrategyName = this.GetType().Name;
+            esasSendResult.SendStartTimeUTC = DateTime.UtcNow;
 
             if (!objects.Any())
             {
@@ -32,19 +31,27 @@ namespace Synchronization.ESAS.SyncDestinations
             }
             else
             {
-                Type t = objects.First().GetType();
+                Type t = objects.First().GetType(); // used to discern which destination-strategy we'll use.
                 var stagingDbSyncStrategy = _esasStagingDbSyncStrategies.Single(strat => strat.IsStrategyMatch(t));
 
                 Stopwatch sp = new Stopwatch();
                 sp.Start();
-                stagingDbSyncStrategy.Deliver(objects, _esasDbContextFactory);
-                sp.Stop();
 
-                esasSendResult.SendToDestinationStatus = EsasOperationResultStatus.OperationSuccesful;
+                try
+                {
+                    stagingDbSyncStrategy.Deliver(objects, _esasDbContextFactory);
+                    esasSendResult.SendToDestinationStatus = EsasOperationResultStatus.OperationSuccesful;
+                }
+                catch (Exception ex)
+                {
+                    esasSendResult.SendToDestinationStatus = EsasOperationResultStatus.OperationFailed;
+                }
+              
+                sp.Stop();
                 esasSendResult.SendTimeMs = sp.ElapsedMilliseconds;
             }
 
-            esasSendResult.SendEndTime = DateTime.Now;
+            esasSendResult.SendEndTimeUTC = DateTime.UtcNow;
             return esasSendResult;
         }
 

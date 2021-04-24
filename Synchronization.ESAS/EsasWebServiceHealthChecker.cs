@@ -3,6 +3,7 @@ using Synchronization.ESAS.Models;
 using Microsoft.Extensions.Logging;
 using System;
 using System.Configuration;
+using System.Data.Services.Client;
 using System.Diagnostics;
 using System.IO;
 using System.Net;
@@ -11,16 +12,18 @@ using System.Security.Cryptography.X509Certificates;
 namespace Synchronization.ESAS
 {
     /// <summary>
-    /// Denne hjælpekomponent udfører et 'isAlive'-check endpoint på ESAS odata-servicen.
+    /// En hjælpekomponent der kan kalde et dedikeret health-check endpoint på ESAS odata-servicen.
     /// </summary>
     public class EsasWebServiceHealthChecker
     {
         private const string IS_ALIVE_ENDPOINT = "isAlive";
+        private const string ODATA_METADATA_ENDPOINT = "$metadata";
+
         private readonly string _esasWsUri;
         private readonly EsasSecuritySettings _esasSecuritySettings;
         private readonly ILogger _logger;
 
-        public EsasWebServiceHealthChecker(string esasWsUri, EsasSecuritySettings esasSecuritySettings, ILogger logger )
+        public EsasWebServiceHealthChecker(string esasWsUri, EsasSecuritySettings esasSecuritySettings, ILogger logger)
         {
             _esasWsUri = esasWsUri;
             _esasSecuritySettings = esasSecuritySettings;
@@ -50,7 +53,7 @@ namespace Synchronization.ESAS
 
                 // Importér fra PFX/P12, hvis en sådan findes:
                 X509Certificate2 certificate = new X509Certificate2();
-                certificate.Import(_esasSecuritySettings.CertifikatSti, _esasSecuritySettings.CertifikatPassword, X509KeyStorageFlags.DefaultKeySet);
+                certificate.Import(_esasSecuritySettings.CertificatePath, _esasSecuritySettings.CertificatePassword, X509KeyStorageFlags.DefaultKeySet);
                 if (certificate == null)
                 {
                     _logger.LogError("Could not add ESAS certificate!");
@@ -88,5 +91,50 @@ namespace Synchronization.ESAS
             healthCheck.CheckTimeMs = sw.ElapsedMilliseconds;
             return healthCheck;
         }
+
+        public string GetMetaData()
+        {
+            _logger.LogInformation("Getting metadata...");
+            string wsAliveUri = string.Join(@"/", _esasWsUri, ODATA_METADATA_ENDPOINT);
+
+            try
+            {
+                HttpWebRequest isAliveWebRequest = (HttpWebRequest)HttpWebRequest.Create(wsAliveUri);
+
+                string esasIntegrationUserName = ConfigurationManager.AppSettings["EsasIntegrationUserName"];
+                string esasIntegrationPassword = ConfigurationManager.AppSettings["EsasIntegrationPassword"];
+                string esasIntegrationDomain = ConfigurationManager.AppSettings["EsasIntegrationDomain"];
+                isAliveWebRequest.Credentials = new NetworkCredential(esasIntegrationUserName, esasIntegrationPassword, esasIntegrationDomain);
+
+                // Importér fra PFX/P12, hvis en sådan findes:
+                X509Certificate2 certificate = new X509Certificate2();
+                certificate.Import(_esasSecuritySettings.CertificatePath, _esasSecuritySettings.CertificatePassword, X509KeyStorageFlags.DefaultKeySet);
+                if (certificate == null)
+                {
+                    _logger.LogError("Could not add ESAS certificate!");
+                    throw new Exception("Could not add ESAS certificate!");
+                }
+
+                isAliveWebRequest.ClientCertificates.Add(certificate);
+
+                var response = isAliveWebRequest.GetResponse();
+                HttpStatusCode status = (response as HttpWebResponse).StatusCode;
+                if ((int)status != 200)
+                    throw new WebException("$metadata not available for OData-service");
+
+                StreamReader sr = new StreamReader(response.GetResponseStream());
+                using (sr)
+                {
+                    return sr.ReadToEnd();
+                }
+            }
+            catch (Exception ex)
+            {
+                throw ex;
+            }
+        }
+
     }
+
+
 }

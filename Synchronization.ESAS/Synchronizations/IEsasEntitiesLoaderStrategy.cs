@@ -1,4 +1,9 @@
-﻿using Synchronization.ESAS.DAL.Models;
+﻿using esas.Dynamics.Models.Contracts;
+using Microsoft.Extensions.Logging;
+using Synchronization.ESAS.DAL.Models;
+using System;
+using System.Collections.Generic;
+using System.Linq;
 
 namespace Synchronization.ESAS.Synchronizations
 {
@@ -8,7 +13,8 @@ namespace Synchronization.ESAS.Synchronizations
         /// Load objects from the datasource
         /// </summary>
         /// <returns></returns>
-        (EsasLoadResult esasLoadResult, object[] loadedObjects) Load(int indexToStartLoadFrom, int howManyRecordsToGet);
+        (EsasLoadResult esasLoadResult, object[] loadedObjects) Load();
     }
+
 }
 

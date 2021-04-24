@@ -2,9 +2,9 @@
 {
     public enum EsasOperationResultStatus
     {
-        OperationFailed = 0,
+        OperationSuccesful = 0,
         OperationPending = 1,
-        OperationSuccesful = 2,
+        OperationFailed = 2,
     }
 
 }

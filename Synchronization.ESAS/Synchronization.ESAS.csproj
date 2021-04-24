@@ -195,6 +195,7 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="EsasWebServiceHealthChecker.cs" />
+    <Compile Include="EsasWsContextFactory.cs" />
     <Compile Include="Models\EsasSecuritySettings.cs" />
     <Compile Include="Models\SyncStrategySettings.cs" />
     <Compile Include="SyncDestinations\EsasStagingDbSyncStrategy1.cs">
@@ -202,13 +203,11 @@
       <DesignTime>True</DesignTime>
       <DependentUpon>EsasStagingDbSyncStrategy.tt</DependentUpon>
     </Compile>
-    <Compile Include="Synchronizations\EntityLoaderStrategies\AnsoegningPlanlaegningsUddannelseselementLoadStrategy.cs" />
     <Compile Include="Synchronizations\EntityLoaderStrategies\DefaultLoadStrategies.cs">
       <AutoGen>True</AutoGen>
       <DesignTime>True</DesignTime>
       <DependentUpon>DefaultLoadStrategies.tt</DependentUpon>
     </Compile>
-    <Compile Include="Synchronizations\EntityLoaderStrategies\GebyrtypePUERelationLoadStrategy.cs" />
     <Compile Include="Synchronizations\EntityLoaderStrategies\OptionSetValueLoadStrategy.cs" />
     <Compile Include="Synchronizations\EsasStagingDbLoadResultDestination.cs" />
     <Compile Include="EsasSynchronizationService.cs">
@@ -216,7 +215,6 @@
     </Compile>
     <Compile Include="Synchronizations\LoadtimeStrategies\FullLoadCutoffStrategy.cs" />
     <Compile Include="Synchronizations\LoadtimeStrategies\ILoadTimeStrategy.cs" />
-    <Compile Include="Synchronizations\LoadtimeStrategies\LatestLoadStrategy.cs" />
     <Compile Include="SyncDestinations\EsasStagingDbSyncDestination.cs" />
     <Compile Include="SyncDestinations\IEsasStagingDbSyncStrategy.cs" />
     <Compile Include="SyncDestinations\NullObjectSyncDestination.cs" />
@@ -228,6 +226,7 @@
     <Compile Include="SyncDestinations\IEsasSyncDestination.cs" />
     <Compile Include="Synchronizations\IEsasEntitiesLoaderStrategy.cs" />
     <Compile Include="Synchronizations\IEsasSyncStrategy.cs" />
+    <Compile Include="Synchronizations\LoadtimeStrategies\LatestSuccesfulLoadStrategy.cs" />
     <Compile Include="Synchronizations\NullObjectLoadResultDestination.cs" />
     <Compile Include="SyncStrategyBundle.cs" />
     <Compile Include="UtilityComponents\DummyEmailService.cs" />

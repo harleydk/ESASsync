@@ -1,13 +1,14 @@
 ﻿using Default;
+using esas.Dynamics.Models.Contracts;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.OData.Client;
 using Synchronization.ESAS.DAL;
 using Synchronization.ESAS.Models;
 using Synchronization.ESAS.SyncDestinations;
 using Synchronization.ESAS.Synchronizations;
 using Synchronization.ESAS.Synchronizations.EntityLoaderStrategies;
 using Synchronization.ESAS.UtilityComponents;
-using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Logging.Abstractions;
-using Microsoft.OData.Client;
 using System;
 using System.Collections.Generic;
 using System.Configuration;
@@ -30,64 +31,40 @@ namespace Synchronization.ESAS
             Password = ConfigurationManager.AppSettings["EsasIntegrationPassword"],
             Domain = ConfigurationManager.AppSettings["EsasIntegrationDomain"],
 
-            CertifikatPassword = ConfigurationManager.AppSettings["esasFunktionsCertPassword"],
-            CertifikatSti = string.Join(@"\", AppDomain.CurrentDomain.BaseDirectory, ConfigurationManager.AppSettings["esasFunktionsCertFilename"])
+            CertificatePassword = ConfigurationManager.AppSettings["esasFunktionsCertPassword"],
+            CertificatePath = string.Join(@"\", AppDomain.CurrentDomain.BaseDirectory, ConfigurationManager.AppSettings["esasFunktionsCertFilename"])
         };
 
         public static void Main()
         {
-            _logger = InitializeLogger();
-            _emailService = new DummyEmailService();
-
             try
             {
-                ServicePointManager.ServerCertificateValidationCallback += (sender, cert, chain, sslPolicyErrors) => true; // Hvis ESAS anvendes med et self-signed certifikat, kan vi ikke validere på det - certifikatets domæne vil ikke svare til localhost.
-
+                _logger = InitializeLogger();
+                _emailService = new DummyEmailService();
                 _logger.LogInformation("Creating OData container connection.");
+      
                 Uri odataWs = new Uri(ConfigurationManager.AppSettings["EsasWsUri"]);
-                var esasWebService = new Container(odataWs);
 
-                var credentials = new NetworkCredential(
-                    _esasSecuritySettings.Username,
-                    _esasSecuritySettings.Password,
-                    _esasSecuritySettings.Domain);
-                esasWebService.Credentials = credentials;
-                esasWebService.SendingRequest2 += addCertificateToRequest;
-
-                #region examples of web-service use
-#if (DEBUG)
-                //#region web-service use inspiration...
-                //var lande = esasWebService.Land.ToList();
-                //var landeTake = esasWebService.Land.Take(10).ToList();
-                //var landeTopOgSkip = esasWebService.Land.Skip(5).Take(10).ToList();
-                //var landeByModified = esasWebService.Land.Where(l => l.ModifiedOn > DateTime.Now.AddDays(-2)).ToList();
-                //var danmark = esasWebService.Land.Where(l => l.esas_navn == "Danmark").SingleOrDefault();
-                //var danmarksMedPostnumre = esasWebService.Land.Expand(l => l.list_esas_postnummer).Where(l => l.esas_navn == "Danmark").SingleOrDefault();
-                //var udvalgteAttrs = esasWebService.Land.AsEnumerable().Select(l => new { l.esas_navn, l.esas_engelsknavn }).ToList(); // sucks - everything is retrieved
-                //var toDictionaryExample = esasWebService.Land.ToDictionary(key => key.esas_landId, value => value.esas_navn); // still sucks
-                //esasWebService.AddToPerson(new person...);
-                //esasWebService.SaveChanges();
-#endif
-                #endregion
+                EsasWsContextFactory esasWsContextFactory = new EsasWsContextFactory(_esasSecuritySettings, odataWs, _logger);
 
                 EsasWebServiceHealthChecker esasWebServiceHealthChecker = new EsasWebServiceHealthChecker(ConfigurationManager.AppSettings["EsasWsUri"], _esasSecuritySettings, _logger);
                 _logger.LogInformation("Establishing sync-strategies.");
 
                 IEsasDbContextFactory esasStagingDbContextFactory = new EsasDbContextFactory();
-                IEnumerable<IEsasStagingDbDestination> esasStagingDbSyncStrategies = CreateEsasStagingDbDestinations();
+                IEnumerable<IEsasStagingDbDestination> esasStagingDbSyncStrategies = CreateEsasStagingDbDestinations(_logger);
 
                 IEsasSyncDestination stagingDbDestination = new EsasStagingDbSyncDestination(esasStagingDbContextFactory, esasStagingDbSyncStrategies);
                 ISyncResultsDestination whereToSendTheSyncResults = new EsasStagingDbLoadResultDestination(esasStagingDbContextFactory);
-                ILoadTimeStrategy loadTimeStrategy = new LatestLoadStrategy(esasStagingDbContextFactory);
+                ILoadTimeStrategy loadTimeStrategy = new LatestSuccesfulLoadStrategy(esasStagingDbContextFactory);
 
                 IList<SyncStrategyBundle> syncStrategyBundles = new List<SyncStrategyBundle>();
 
-                IEnumerable<IEsasSyncStrategy> standardEntitiesSyncs = CreateStandardEntitiesSyncs(esasWebService, whereToSendTheSyncResults, loadTimeStrategy, _logger, stagingDbDestination);
+                IEnumerable<IEsasSyncStrategy> standardEntitiesSyncs = CreateStandardEntitiesSyncs(esasWsContextFactory, whereToSendTheSyncResults, loadTimeStrategy, _logger, stagingDbDestination);
 
-                // create strategy-bundles for N-minute intervals for 4 am thru 10 pm, i.e. 18 hours
+                // Create strategy-bundles for N-minute intervals for A am thru B pm, fx. 6 to 22:
                 for (int hour = 6; hour < 22; hour++)
                 {
-                    for (int minutes = 0; minutes < 60; minutes += 20)
+                    for (int minutes = 0; minutes < 60; minutes += 30)
                     {
                         TimeSpan syncTimeSpan = new TimeSpan(hour, minutes, 0);
                         SyncStrategyBundle bundle = new SyncStrategyBundle(syncTimeSpan, standardEntitiesSyncs, _logger);
@@ -100,16 +77,103 @@ namespace Synchronization.ESAS
                 {
                     new EsasSynchronizationService(syncStrategyBundles, esasStagingDbContextFactory, esasWebServiceHealthChecker, _logger, _emailService)
                 };
-#if (DEBUG)
-                // Debug? manual sync here we go
-                EsasSynchronizationService service = new EsasSynchronizationService(syncStrategyBundles, esasStagingDbContextFactory, esasWebServiceHealthChecker, _logger, _emailService);
-                foreach (var bundelOfSyncStrategies in syncStrategyBundles)
-                {
-                    bundelOfSyncStrategies.ExecuteSync();
-                }
-#else
-                // Release? Windows service rock´n roll:
+#if (!DEBUG)
+                // windows service rock'n roll
                 ServiceBase.Run(ServicesToRun);
+#else
+                #region devSync - for manuel syncs.
+
+
+                List<string> positivListe = new List<string>();
+
+                #region strategyList
+                // ***Virksomheds - og person - oplysninger ***
+                positivListe.Add("LandLoadStrategy");
+                positivListe.Add("KommuneLoadStrategy");
+                positivListe.Add("PostnummerLoadStrategy");
+                positivListe.Add("BrancheLoadStrategy");
+                positivListe.Add("InstitutionVirksomhedLoadStrategy");
+                positivListe.Add("InstitutionsoplysningerLoadStrategy");
+                positivListe.Add("AfdelingsniveauLoadStrategy");
+                positivListe.Add("AfdelingLoadStrategy");
+                positivListe.Add("PersonLoadStrategy");
+                positivListe.Add("PersonoplysningLoadStrategy");
+
+                // *** opsætningstabeller, som øvrige syncs er afhængige af. ***
+                positivListe.Add("AnsoegningskortOpsaetningLoadStrategy");
+                positivListe.Add("PubliceringLoadStrategy");
+                positivListe.Add("AdgangskravLoadStrategy");
+                positivListe.Add("FravaersaarsagLoadStrategy");
+
+                ////////// *** Uddannelsesaktiviteter ***
+                positivListe.Add("UddannelsesaktivitetLoadStrategy");
+                positivListe.Add("UddannelsesstrukturLoadStrategy");
+                positivListe.Add("StruktureltUddannelseselementLoadStrategy");
+                positivListe.Add("AktivitetsudbudLoadStrategy");
+
+                //// *** PUE//Hold ***
+                positivListe.Add("PlanlaegningsUddannelseselementLoadStrategy");
+                positivListe.Add("HoldLoadStrategy");
+                positivListe.Add("SamlaesningLoadStrategy");
+
+                //// *** Ansøgninger ***
+                positivListe.Add("RekvirenttypeLoadStrategy");
+                positivListe.Add("AnsoegerLoadStrategy");
+                positivListe.Add("AnsoegningsopsaetningLoadStrategy");
+                positivListe.Add("AnsoegningskortTekstLoadStrategy");
+                positivListe.Add("AnsoegningskortLoadStrategy");
+                positivListe.Add("EksamenstypeLoadStrategy");
+                positivListe.Add("OmraadenummerLoadStrategy");
+                positivListe.Add("OmraadenummeropsaetningLoadStrategy");
+                positivListe.Add("OmraadespecialiseringLoadStrategy");
+                positivListe.Add("SpecialiseringLoadStrategy");
+                positivListe.Add("AfslagsbegrundelseLoadStrategy");
+                positivListe.Add("AnsoegningLoadStrategy");
+                positivListe.Add("AnsoegningshandlingLoadStrategy");
+                positivListe.Add("AnsoegningPlanlaegningsUddannelseselementLoadStrategy");
+                positivListe.Add("BilagLoadStrategy");
+                positivListe.Add("NationalAfgangsaarsagLoadStrategy");
+                positivListe.Add("EnkeltfagLoadStrategy");
+
+                //***GUEer / Studieforløb * **
+                positivListe.Add("IndskrivningsformLoadStrategy");
+                positivListe.Add("StudieforloebLoadStrategy");
+                positivListe.Add("BedoemmelsesrundeLoadStrategy");
+                positivListe.Add("KarakterLoadStrategy");
+                positivListe.Add("GennemfoerelsesUddannelseselementLoadStrategy");
+                positivListe.Add("BedoemmelseLoadStrategy");
+                positivListe.Add("StudieinaktivPeriodeLoadStrategy");
+                positivListe.Add("MeritRegistreringLoadStrategy");
+                positivListe.Add("PraktikomraadeLoadStrategy");
+                positivListe.Add("PraktikopholdLoadStrategy");
+                //positivListe.Add("BevisgrundlagLoadStrategy"); --meget stor og omfattende tabel, er ikke sikker på dens forretningsværdi.Udelader den, for now.
+
+                ////// *** Øvrige ***
+                positivListe.Add("OptionSetValueLoadStrategy");
+                #endregion strategyList
+
+                var debugSyncStrategy = new LatestSuccesfulLoadStrategy(esasStagingDbContextFactory);
+                var debugSyncStrategies = CreateStandardEntitiesSyncs(esasWsContextFactory, whereToSendTheSyncResults, debugSyncStrategy, _logger, stagingDbDestination);
+
+                //// tilføj initial-optionsetvaluestring load
+                IEsasSyncStrategy initialOptionSetValueBulkLoadStrategy = new EsasSyncStrategy(new SyncStrategySettings { SyncPriorityNumber = 1000 },
+                    new OptionSetValueLoadStrategy(esasWsContextFactory, _logger), stagingDbDestination, whereToSendTheSyncResults, _logger);
+                debugSyncStrategies.Add(initialOptionSetValueBulkLoadStrategy);
+
+                var initielleStrategier = debugSyncStrategies.Where(strat =>
+                        positivListe.Contains(strat.EsasEntitiesLoaderStrategy.GetType().Name)
+                        ||
+                        strat.EsasEntitiesLoaderStrategy.GetType().Name == "OptionSetValueInitialBulkLoadStrategy"
+                    );
+                SyncStrategyBundle initialSaveToFileSyncBundle = new SyncStrategyBundle(
+                    syncTime: new TimeSpan(01, 00, 00), // let's go back just a day for this manuel debug sync
+                    syncStrategies: initielleStrategier,
+                    logger: _logger);
+
+                EsasSynchronizationService service = new EsasSynchronizationService(new List<SyncStrategyBundle>() { initialSaveToFileSyncBundle }, esasStagingDbContextFactory, esasWebServiceHealthChecker, _logger, _emailService);
+                initialSaveToFileSyncBundle.ExecuteSync();
+
+                #endregion
 #endif
             }
             catch (Exception ex)
@@ -120,196 +184,162 @@ namespace Synchronization.ESAS
             }
         }
 
-        /// <summary>
-        /// Tilføj sikkerhedscertifikat til request'en, hvis denne kaldes på et miljø der kræver dette.
-        /// </summary>
-        private static void addCertificateToRequest(object sender, Microsoft.OData.Client.SendingRequest2EventArgs e)
-        {
-            X509Certificate2 certificate = new X509Certificate2();
-            certificate.Import(_esasSecuritySettings.CertifikatSti, _esasSecuritySettings.CertifikatPassword, X509KeyStorageFlags.DefaultKeySet);
-            if (null != certificate)
-            {
-                ((HttpWebRequestMessage)e.RequestMessage).HttpWebRequest.ClientCertificates.Add(certificate);
 
-                DateTime expirationDate = DateTime.Parse(certificate.GetExpirationDateString());
-                if (DateTime.Today.AddDays(14) >= expirationDate.Date)
-                {
-                    string certExpirationErrorMsg = @"Et ESAS sikkerhedscertifikat er tæt på at udløbe - om mindre end 14 dage vil denne applikation stoppe med at fungere, hvis ikke dette certifikat bliver fornyet. Ref. https://confluence.umit.dk/display/esasdokumentation/Systemtilslutning";
-                    _emailService.SendStatusMail(certExpirationErrorMsg);
-                    throw new Exception(certExpirationErrorMsg);
-                }
-            }
-            else
-            {
-                throw new Exception("Sikkerhedscertifikat kunne ikke loades :-( - data vil ikke kunne hentes fra OData.");
-            }
-        }
-
-        private static List<IEsasSyncStrategy> CreateStandardEntitiesSyncs(Container esasWebService, ISyncResultsDestination whereToSendTheLoadResults, ILoadTimeStrategy loadTimeStrategy, ILogger logger, IEsasSyncDestination stagingDbDestination)
+        private static List<IEsasSyncStrategy> CreateStandardEntitiesSyncs(EsasWsContextFactory esasWsContextFactory, ISyncResultsDestination whereToSendTheSyncResults, ILoadTimeStrategy loadTimeStrategy, ILogger logger, IEsasSyncDestination stagingDbDestination)
         {
             // let's hook up some sync-strategies
             List<IEsasSyncStrategy> standardEntitiesSyncs = new List<IEsasSyncStrategy>();
 
             // Virksomheds- og person-oplysninger
-            IEsasSyncStrategy LandSync = new EsasSyncStrategy(new SyncStrategySettings { SyncPriorityNumber = 30 }, new LandLoadStrategy(esasWebService, loadTimeStrategy, logger), stagingDbDestination, whereToSendTheLoadResults, logger);
+            IEsasSyncStrategy LandSync = new EsasSyncStrategy(new SyncStrategySettings { SyncPriorityNumber = 30 }, new LandLoadStrategy(esasWsContextFactory, loadTimeStrategy, logger), stagingDbDestination, whereToSendTheSyncResults, logger);
             standardEntitiesSyncs.Add(LandSync);
-            IEsasSyncStrategy PostNrSync = new EsasSyncStrategy(new SyncStrategySettings { SyncPriorityNumber = 40 }, new PostnummerLoadStrategy(esasWebService, loadTimeStrategy, logger), stagingDbDestination, whereToSendTheLoadResults, logger);
+            IEsasSyncStrategy KommuneSync = new EsasSyncStrategy(new SyncStrategySettings { SyncPriorityNumber = 35 }, new KommuneLoadStrategy(esasWsContextFactory, loadTimeStrategy, logger), stagingDbDestination, whereToSendTheSyncResults, logger);
+            standardEntitiesSyncs.Add(KommuneSync);
+            IEsasSyncStrategy PostNrSync = new EsasSyncStrategy(new SyncStrategySettings { SyncPriorityNumber = 40 }, new PostnummerLoadStrategy(esasWsContextFactory, loadTimeStrategy, logger), stagingDbDestination, whereToSendTheSyncResults, logger);
             standardEntitiesSyncs.Add(PostNrSync);
-            IEsasSyncStrategy BrancheSync = new EsasSyncStrategy(new SyncStrategySettings { SyncPriorityNumber = 45 }, new BrancheLoadStrategy(esasWebService, loadTimeStrategy, logger), stagingDbDestination, whereToSendTheLoadResults, logger);
+            IEsasSyncStrategy BrancheSync = new EsasSyncStrategy(new SyncStrategySettings { SyncPriorityNumber = 45 }, new BrancheLoadStrategy(esasWsContextFactory, loadTimeStrategy, logger), stagingDbDestination, whereToSendTheSyncResults, logger);
             standardEntitiesSyncs.Add(BrancheSync);
 
-            IEsasSyncStrategy InstInstitutionsoplysningerSync = new EsasSyncStrategy(new SyncStrategySettings { SyncPriorityNumber = 50 }, new InstitutionsoplysningerLoadStrategy(esasWebService, loadTimeStrategy, logger), stagingDbDestination, whereToSendTheLoadResults, logger);
-            standardEntitiesSyncs.Add(InstInstitutionsoplysningerSync);
-            IEsasSyncStrategy InstitutionsVirksomhedSync = new EsasSyncStrategy(new SyncStrategySettings { SyncPriorityNumber = 60 }, new InstitutionVirksomhedLoadStrategy(esasWebService, loadTimeStrategy, logger), stagingDbDestination, whereToSendTheLoadResults, logger);
+            IEsasSyncStrategy InstitutionsVirksomhedSync = new EsasSyncStrategy(new SyncStrategySettings { SyncPriorityNumber = 50 }, new InstitutionVirksomhedLoadStrategy(esasWsContextFactory, loadTimeStrategy, logger), stagingDbDestination, whereToSendTheSyncResults, logger);
             standardEntitiesSyncs.Add(InstitutionsVirksomhedSync);
-            IEsasSyncStrategy AfdelingSync = new EsasSyncStrategy(new SyncStrategySettings { SyncPriorityNumber = 70 }, new AfdelingLoadStrategy(esasWebService, loadTimeStrategy, logger), stagingDbDestination, whereToSendTheLoadResults, logger);
+            IEsasSyncStrategy InstInstitutionsoplysningerSync = new EsasSyncStrategy(new SyncStrategySettings { SyncPriorityNumber = 60 }, new InstitutionsoplysningerLoadStrategy(esasWsContextFactory, loadTimeStrategy, logger), stagingDbDestination, whereToSendTheSyncResults, logger);
+            standardEntitiesSyncs.Add(InstInstitutionsoplysningerSync);
+            IEsasSyncStrategy AAfdelingsniveauSync = new EsasSyncStrategy(new SyncStrategySettings { SyncPriorityNumber = 65 }, new AfdelingsniveauLoadStrategy(esasWsContextFactory, loadTimeStrategy, logger), stagingDbDestination, whereToSendTheSyncResults, logger);
+            standardEntitiesSyncs.Add(AAfdelingsniveauSync);
+            IEsasSyncStrategy AfdelingSync = new EsasSyncStrategy(new SyncStrategySettings { SyncPriorityNumber = 70 }, new AfdelingLoadStrategy(esasWsContextFactory, loadTimeStrategy, logger), stagingDbDestination, whereToSendTheSyncResults, logger);
             standardEntitiesSyncs.Add(AfdelingSync);
 
-            IEsasSyncStrategy PersonSync = new EsasSyncStrategy(new SyncStrategySettings { SyncPriorityNumber = 75 }, new PersonLoadStrategy(esasWebService, loadTimeStrategy, logger), stagingDbDestination, whereToSendTheLoadResults, logger);
+            IEsasSyncStrategy PersonSync = new EsasSyncStrategy(new SyncStrategySettings { SyncPriorityNumber = 75 }, new PersonLoadStrategy(esasWsContextFactory, loadTimeStrategy, logger), stagingDbDestination, whereToSendTheSyncResults, logger);
             standardEntitiesSyncs.Add(PersonSync);
-            IEsasSyncStrategy PersonOplysningSync = new EsasSyncStrategy(new SyncStrategySettings { SyncPriorityNumber = 80 }, new PersonoplysningLoadStrategy(esasWebService, loadTimeStrategy, logger), stagingDbDestination, whereToSendTheLoadResults, logger);
+            IEsasSyncStrategy PersonOplysningSync = new EsasSyncStrategy(new SyncStrategySettings { SyncPriorityNumber = 80 }, new PersonoplysningLoadStrategy(esasWsContextFactory, loadTimeStrategy, logger), stagingDbDestination, whereToSendTheSyncResults, logger);
             standardEntitiesSyncs.Add(PersonOplysningSync);
+
+            // opsætningstabeller, som øvrige syncs er afhængige af.
+            IEsasSyncStrategy AnsøgningskortopsætningSync = new EsasSyncStrategy(new SyncStrategySettings { SyncPriorityNumber = 90 }, new AnsoegningskortOpsaetningLoadStrategy(esasWsContextFactory, loadTimeStrategy, logger), stagingDbDestination, whereToSendTheSyncResults, logger);
+            standardEntitiesSyncs.Add(AnsøgningskortopsætningSync);
+            IEsasSyncStrategy PubliceringsSync = new EsasSyncStrategy(new SyncStrategySettings { SyncPriorityNumber = 91 }, new PubliceringLoadStrategy(esasWsContextFactory, loadTimeStrategy, logger), stagingDbDestination, whereToSendTheSyncResults, logger);
+            standardEntitiesSyncs.Add(PubliceringsSync);
+            IEsasSyncStrategy AdgangskravSync = new EsasSyncStrategy(new SyncStrategySettings { SyncPriorityNumber = 92 }, new AdgangskravLoadStrategy(esasWsContextFactory, loadTimeStrategy, logger), stagingDbDestination, whereToSendTheSyncResults, logger);
+            standardEntitiesSyncs.Add(AdgangskravSync);
 
 
             // Uddannelsesaktiviteter
-            IEsasSyncStrategy UddannelsesaktivitetSync = new EsasSyncStrategy(new SyncStrategySettings { SyncPriorityNumber = 100 }, new UddannelsesaktivitetLoadStrategy(esasWebService, loadTimeStrategy, logger), stagingDbDestination, whereToSendTheLoadResults, logger);
+            IEsasSyncStrategy UddannelsesaktivitetSync = new EsasSyncStrategy(new SyncStrategySettings { SyncPriorityNumber = 100 }, new UddannelsesaktivitetLoadStrategy(esasWsContextFactory, loadTimeStrategy, logger), stagingDbDestination, whereToSendTheSyncResults, logger);
             standardEntitiesSyncs.Add(UddannelsesaktivitetSync);
-            IEsasSyncStrategy UddannelsesstrukturSync = new EsasSyncStrategy(new SyncStrategySettings { SyncPriorityNumber = 200 }, new UddannelsesstrukturLoadStrategy(esasWebService, loadTimeStrategy, logger), stagingDbDestination, whereToSendTheLoadResults, logger);
+            IEsasSyncStrategy UddannelsesstrukturSync = new EsasSyncStrategy(new SyncStrategySettings { SyncPriorityNumber = 200 }, new UddannelsesstrukturLoadStrategy(esasWsContextFactory, loadTimeStrategy, logger), stagingDbDestination, whereToSendTheSyncResults, logger);
             standardEntitiesSyncs.Add(UddannelsesstrukturSync); // Uddannelsesstrukturen består af strukturelle uddannelseselementer på bekendtgørelsesniveau og på studieordningsniveau.
-            IEsasSyncStrategy SueSync = new EsasSyncStrategy(new SyncStrategySettings { SyncPriorityNumber = 250 }, new StruktureltUddannelseselementLoadStrategy(esasWebService, loadTimeStrategy, logger), stagingDbDestination, whereToSendTheLoadResults, logger);
+            IEsasSyncStrategy SueSync = new EsasSyncStrategy(new SyncStrategySettings { SyncPriorityNumber = 250 }, new StruktureltUddannelseselementLoadStrategy(esasWsContextFactory, loadTimeStrategy, logger), stagingDbDestination, whereToSendTheSyncResults, logger);
             standardEntitiesSyncs.Add(SueSync); // Et strukturelt uddannelseselement er enten et semester, et fag eller en gruppering
-            IEsasSyncStrategy AktivitetsUdbudSync = new EsasSyncStrategy(new SyncStrategySettings { SyncPriorityNumber = 300 }, new AktivitetsudbudLoadStrategy(esasWebService, loadTimeStrategy, logger), stagingDbDestination, whereToSendTheLoadResults, logger);
+            IEsasSyncStrategy AktivitetsUdbudSync = new EsasSyncStrategy(new SyncStrategySettings { SyncPriorityNumber = 300 }, new AktivitetsudbudLoadStrategy(esasWsContextFactory, loadTimeStrategy, logger), stagingDbDestination, whereToSendTheSyncResults, logger);
             standardEntitiesSyncs.Add(AktivitetsUdbudSync);
 
             // PUE//Hold
-            IEsasSyncStrategy PueSync = new EsasSyncStrategy(new SyncStrategySettings { SyncPriorityNumber = 400 }, new PlanlaegningsUddannelseselementLoadStrategy(esasWebService, loadTimeStrategy, logger), stagingDbDestination, whereToSendTheLoadResults, logger);
+            IEsasSyncStrategy PueSync = new EsasSyncStrategy(new SyncStrategySettings { SyncPriorityNumber = 400 }, new PlanlaegningsUddannelseselementLoadStrategy(esasWsContextFactory, loadTimeStrategy, logger), stagingDbDestination, whereToSendTheSyncResults, logger);
             standardEntitiesSyncs.Add(PueSync);
-            IEsasSyncStrategy HoldSync = new EsasSyncStrategy(new SyncStrategySettings { SyncPriorityNumber = 410 }, new HoldLoadStrategy(esasWebService, loadTimeStrategy, logger), stagingDbDestination, whereToSendTheLoadResults, logger);
+            IEsasSyncStrategy HoldSync = new EsasSyncStrategy(new SyncStrategySettings { SyncPriorityNumber = 410 }, new HoldLoadStrategy(esasWsContextFactory, loadTimeStrategy, logger), stagingDbDestination, whereToSendTheSyncResults, logger);
             standardEntitiesSyncs.Add(HoldSync);
-
+            IEsasSyncStrategy SamlæsningSync = new EsasSyncStrategy(new SyncStrategySettings { SyncPriorityNumber = 420 }, new SamlaesningLoadStrategy(esasWsContextFactory, loadTimeStrategy, logger), stagingDbDestination, whereToSendTheSyncResults, logger);
+            standardEntitiesSyncs.Add(SamlæsningSync);
 
             // Ansøgninger
-            IEsasSyncStrategy AnsøgerSync = new EsasSyncStrategy(new SyncStrategySettings { SyncPriorityNumber = 500 }, new AnsoegerLoadStrategy(esasWebService, loadTimeStrategy, logger), stagingDbDestination, whereToSendTheLoadResults, logger);
+            IEsasSyncStrategy RekvirenttypeSync = new EsasSyncStrategy(new SyncStrategySettings { SyncPriorityNumber = 490 }, new RekvirenttypeLoadStrategy(esasWsContextFactory, loadTimeStrategy, logger), stagingDbDestination, whereToSendTheSyncResults, logger);
+            standardEntitiesSyncs.Add(RekvirenttypeSync);
+            IEsasSyncStrategy AnsøgerSync = new EsasSyncStrategy(new SyncStrategySettings { SyncPriorityNumber = 500 }, new AnsoegerLoadStrategy(esasWsContextFactory, loadTimeStrategy, logger), stagingDbDestination, whereToSendTheSyncResults, logger);
             standardEntitiesSyncs.Add(AnsøgerSync);
 
-            IEsasSyncStrategy AnsøgningskortopsætningSync = new EsasSyncStrategy(new SyncStrategySettings { SyncPriorityNumber = 510 }, new AnsoegningskortOpsaetningLoadStrategy(esasWebService, loadTimeStrategy, logger), stagingDbDestination, whereToSendTheLoadResults, logger);
-            standardEntitiesSyncs.Add(AnsøgningskortopsætningSync);
-
-            IEsasSyncStrategy AnsøgningsopsætningSync = new EsasSyncStrategy(new SyncStrategySettings { SyncPriorityNumber = 520 }, new AnsoegningsopsaetningLoadStrategy(esasWebService, loadTimeStrategy, logger), stagingDbDestination, whereToSendTheLoadResults, logger);
+            IEsasSyncStrategy AnsøgningsopsætningSync = new EsasSyncStrategy(new SyncStrategySettings { SyncPriorityNumber = 520 }, new AnsoegningsopsaetningLoadStrategy(esasWsContextFactory, loadTimeStrategy, logger), stagingDbDestination, whereToSendTheSyncResults, logger);
             standardEntitiesSyncs.Add(AnsøgningsopsætningSync);
 
-            IEsasSyncStrategy AnsøgningsKorttekstSync = new EsasSyncStrategy(new SyncStrategySettings { SyncPriorityNumber = 530 }, new AnsoegningskortTekstLoadStrategy(esasWebService, loadTimeStrategy, logger), stagingDbDestination, whereToSendTheLoadResults, logger);
+            IEsasSyncStrategy AnsøgningsKorttekstSync = new EsasSyncStrategy(new SyncStrategySettings { SyncPriorityNumber = 530 }, new AnsoegningskortTekstLoadStrategy(esasWsContextFactory, loadTimeStrategy, logger), stagingDbDestination, whereToSendTheSyncResults, logger);
             standardEntitiesSyncs.Add(AnsøgningsKorttekstSync);
 
-            IEsasSyncStrategy AnsøgningskortSync = new EsasSyncStrategy(new SyncStrategySettings { SyncPriorityNumber = 540 }, new AnsoegningskortLoadStrategy(esasWebService, loadTimeStrategy, logger), stagingDbDestination, whereToSendTheLoadResults, logger);
+            IEsasSyncStrategy AnsøgningskortSync = new EsasSyncStrategy(new SyncStrategySettings { SyncPriorityNumber = 540 }, new AnsoegningskortLoadStrategy(esasWsContextFactory, loadTimeStrategy, logger), stagingDbDestination, whereToSendTheSyncResults, logger);
             standardEntitiesSyncs.Add(AnsøgningskortSync);
 
-            IEsasSyncStrategy EksamenstypeSync = new EsasSyncStrategy(new SyncStrategySettings { SyncPriorityNumber = 550 }, new EksamenstypeLoadStrategy(esasWebService, loadTimeStrategy, logger), stagingDbDestination, whereToSendTheLoadResults, logger);
+            IEsasSyncStrategy EksamenstypeSync = new EsasSyncStrategy(new SyncStrategySettings { SyncPriorityNumber = 550 }, new EksamenstypeLoadStrategy(esasWsContextFactory, loadTimeStrategy, logger), stagingDbDestination, whereToSendTheSyncResults, logger);
             standardEntitiesSyncs.Add(EksamenstypeSync);
 
-            IEsasSyncStrategy OmrådenummerSync = new EsasSyncStrategy(new SyncStrategySettings { SyncPriorityNumber = 555 }, new OmraadenummerLoadStrategy(esasWebService, loadTimeStrategy, logger), stagingDbDestination, whereToSendTheLoadResults, logger);
+            IEsasSyncStrategy OmrådenummerSync = new EsasSyncStrategy(new SyncStrategySettings { SyncPriorityNumber = 555 }, new OmraadenummerLoadStrategy(esasWsContextFactory, loadTimeStrategy, logger), stagingDbDestination, whereToSendTheSyncResults, logger);
             standardEntitiesSyncs.Add(OmrådenummerSync);
 
-            IEsasSyncStrategy Områdenummeropsætningsync = new EsasSyncStrategy(new SyncStrategySettings { SyncPriorityNumber = 560 }, new OmraadenummeropsaetningLoadStrategy(esasWebService, loadTimeStrategy, logger), stagingDbDestination, whereToSendTheLoadResults, logger);
+            IEsasSyncStrategy Områdenummeropsætningsync = new EsasSyncStrategy(new SyncStrategySettings { SyncPriorityNumber = 560 }, new OmraadenummeropsaetningLoadStrategy(esasWsContextFactory, loadTimeStrategy, logger), stagingDbDestination, whereToSendTheSyncResults, logger);
             standardEntitiesSyncs.Add(Områdenummeropsætningsync);
 
-            IEsasSyncStrategy OmrådeSpecialiseringSync = new EsasSyncStrategy(new SyncStrategySettings { SyncPriorityNumber = 570 }, new OmraadespecialiseringLoadStrategy(esasWebService, loadTimeStrategy, logger), stagingDbDestination, whereToSendTheLoadResults, logger);
+            IEsasSyncStrategy OmrådeSpecialiseringSync = new EsasSyncStrategy(new SyncStrategySettings { SyncPriorityNumber = 570 }, new OmraadespecialiseringLoadStrategy(esasWsContextFactory, loadTimeStrategy, logger), stagingDbDestination, whereToSendTheSyncResults, logger);
             standardEntitiesSyncs.Add(OmrådeSpecialiseringSync);
 
-            IEsasSyncStrategy AdgangskravSync = new EsasSyncStrategy(new SyncStrategySettings { SyncPriorityNumber = 580 }, new AdgangskravLoadStrategy(esasWebService, loadTimeStrategy, logger), stagingDbDestination, whereToSendTheLoadResults, logger);
-            standardEntitiesSyncs.Add(AdgangskravSync);
+            IEsasSyncStrategy SpecialiseringSync = new EsasSyncStrategy(new SyncStrategySettings { SyncPriorityNumber = 580 }, new SpecialiseringLoadStrategy(esasWsContextFactory, loadTimeStrategy, logger), stagingDbDestination, whereToSendTheSyncResults, logger);
+            standardEntitiesSyncs.Add(SpecialiseringSync);
 
-            IEsasSyncStrategy AfslagsbegrundelseSync = new EsasSyncStrategy(new SyncStrategySettings { SyncPriorityNumber = 590 }, new AfslagsbegrundelseLoadStrategy(esasWebService, loadTimeStrategy, logger), stagingDbDestination, whereToSendTheLoadResults, logger);
+            IEsasSyncStrategy AfslagsbegrundelseSync = new EsasSyncStrategy(new SyncStrategySettings { SyncPriorityNumber = 590 }, new AfslagsbegrundelseLoadStrategy(esasWsContextFactory, loadTimeStrategy, logger), stagingDbDestination, whereToSendTheSyncResults, logger);
             standardEntitiesSyncs.Add(AfslagsbegrundelseSync);
 
-            IEsasSyncStrategy AnsøgningSync = new EsasSyncStrategy(new SyncStrategySettings { SyncPriorityNumber = 600 }, new AnsoegningLoadStrategy(esasWebService, loadTimeStrategy, logger), stagingDbDestination, whereToSendTheLoadResults, logger);
+            IEsasSyncStrategy AnsøgningSync = new EsasSyncStrategy(new SyncStrategySettings { SyncPriorityNumber = 600 }, new AnsoegningLoadStrategy(esasWsContextFactory, loadTimeStrategy, logger), stagingDbDestination, whereToSendTheSyncResults, logger);
             standardEntitiesSyncs.Add(AnsøgningSync);
 
-            IEsasSyncStrategy AnsøgninghandlingSync = new EsasSyncStrategy(new SyncStrategySettings { SyncPriorityNumber = 610 }, new AnsoegningshandlingLoadStrategy(esasWebService, loadTimeStrategy, logger), stagingDbDestination, whereToSendTheLoadResults, logger);
+            IEsasSyncStrategy AnsøgninghandlingSync = new EsasSyncStrategy(new SyncStrategySettings { SyncPriorityNumber = 610 }, new AnsoegningshandlingLoadStrategy(esasWsContextFactory, loadTimeStrategy, logger), stagingDbDestination, whereToSendTheSyncResults, logger);
             standardEntitiesSyncs.Add(AnsøgninghandlingSync);
 
-            IEsasSyncStrategy AnsoegningPlanlaegningsUddannelseselementSync = new EsasSyncStrategy(new SyncStrategySettings { SyncPriorityNumber = 615 }, new AnsoegningPlanlaegningsUddannelseselementLoadStrategy(esasWebService, logger), stagingDbDestination, whereToSendTheLoadResults, logger);
-            standardEntitiesSyncs.Add(AnsoegningPlanlaegningsUddannelseselementSync);
-
-            IEsasSyncStrategy BilagSync = new EsasSyncStrategy(new SyncStrategySettings { SyncPriorityNumber = 620 }, new BilagLoadStrategy(esasWebService, loadTimeStrategy, logger), stagingDbDestination, whereToSendTheLoadResults, logger);
+            IEsasSyncStrategy BilagSync = new EsasSyncStrategy(new SyncStrategySettings { SyncPriorityNumber = 620 }, new BilagLoadStrategy(esasWsContextFactory, loadTimeStrategy, logger), stagingDbDestination, whereToSendTheSyncResults, logger);
             standardEntitiesSyncs.Add(BilagSync);
 
-            IEsasSyncStrategy NationalAfgangsårsagSync = new EsasSyncStrategy(new SyncStrategySettings { SyncPriorityNumber = 630 }, new NationalAfgangsaarsagLoadStrategy(esasWebService, loadTimeStrategy, logger), stagingDbDestination, whereToSendTheLoadResults, logger);
+            IEsasSyncStrategy NationalAfgangsårsagSync = new EsasSyncStrategy(new SyncStrategySettings { SyncPriorityNumber = 630 }, new NationalAfgangsaarsagLoadStrategy(esasWsContextFactory, loadTimeStrategy, logger), stagingDbDestination, whereToSendTheSyncResults, logger);
             standardEntitiesSyncs.Add(NationalAfgangsårsagSync);
 
-            IEsasSyncStrategy EnkeltfagSync = new EsasSyncStrategy(new SyncStrategySettings { SyncPriorityNumber = 640 }, new EnkeltfagLoadStrategy(esasWebService, loadTimeStrategy, logger), stagingDbDestination, whereToSendTheLoadResults, logger);
+            IEsasSyncStrategy EnkeltfagSync = new EsasSyncStrategy(new SyncStrategySettings { SyncPriorityNumber = 640 }, new EnkeltfagLoadStrategy(esasWsContextFactory, loadTimeStrategy, logger), stagingDbDestination, whereToSendTheSyncResults, logger);
             standardEntitiesSyncs.Add(EnkeltfagSync);
 
 
             // GUEer/Studieforløb
+            IEsasSyncStrategy IndskrivningsformSync = new EsasSyncStrategy(new SyncStrategySettings { SyncPriorityNumber = 695 }, new IndskrivningsformLoadStrategy(esasWsContextFactory, loadTimeStrategy, logger), stagingDbDestination, whereToSendTheSyncResults, logger);
+            standardEntitiesSyncs.Add(IndskrivningsformSync);
 
-            IEsasSyncStrategy StudieforløbSync = new EsasSyncStrategy(new SyncStrategySettings { SyncPriorityNumber = 700 }, new StudieforloebLoadStrategy(esasWebService, loadTimeStrategy, logger), stagingDbDestination, whereToSendTheLoadResults, logger);
+            IEsasSyncStrategy StudieforløbSync = new EsasSyncStrategy(new SyncStrategySettings { SyncPriorityNumber = 700 }, new StudieforloebLoadStrategy(esasWsContextFactory, loadTimeStrategy, logger), stagingDbDestination, whereToSendTheSyncResults, logger);
             standardEntitiesSyncs.Add(StudieforløbSync);
 
-            IEsasSyncStrategy BedømmelsesrundeSync = new EsasSyncStrategy(new SyncStrategySettings { SyncPriorityNumber = 720 }, new BedoemmelsesrundeLoadStrategy(esasWebService, loadTimeStrategy, logger), stagingDbDestination, whereToSendTheLoadResults, logger);
+            IEsasSyncStrategy BedømmelsesrundeSync = new EsasSyncStrategy(new SyncStrategySettings { SyncPriorityNumber = 720 }, new BedoemmelsesrundeLoadStrategy(esasWsContextFactory, loadTimeStrategy, logger), stagingDbDestination, whereToSendTheSyncResults, logger);
             standardEntitiesSyncs.Add(BedømmelsesrundeSync);
-            IEsasSyncStrategy KarakterSync = new EsasSyncStrategy(new SyncStrategySettings { SyncPriorityNumber = 740 }, new KarakterLoadStrategy(esasWebService, loadTimeStrategy, logger), stagingDbDestination, whereToSendTheLoadResults, logger);
+            IEsasSyncStrategy KarakterSync = new EsasSyncStrategy(new SyncStrategySettings { SyncPriorityNumber = 740 }, new KarakterLoadStrategy(esasWsContextFactory, loadTimeStrategy, logger), stagingDbDestination, whereToSendTheSyncResults, logger);
             standardEntitiesSyncs.Add(KarakterSync);
 
-            IEsasSyncStrategy GueSync = new EsasSyncStrategy(new SyncStrategySettings { SyncPriorityNumber = 750 }, new GennemfoerelsesUddannelseselementLoadStrategy(esasWebService, loadTimeStrategy, logger), stagingDbDestination, whereToSendTheLoadResults, logger);
+            IEsasSyncStrategy GueSync = new EsasSyncStrategy(new SyncStrategySettings { SyncPriorityNumber = 750 }, new GennemfoerelsesUddannelseselementLoadStrategy(esasWsContextFactory, loadTimeStrategy, logger), stagingDbDestination, whereToSendTheSyncResults, logger);
             standardEntitiesSyncs.Add(GueSync);
 
-            IEsasSyncStrategy Bedømmelsesync = new EsasSyncStrategy(new SyncStrategySettings { SyncPriorityNumber = 760 }, new BedoemmelseLoadStrategy(esasWebService, loadTimeStrategy, logger), stagingDbDestination, whereToSendTheLoadResults, logger);
+            IEsasSyncStrategy Bedømmelsesync = new EsasSyncStrategy(new SyncStrategySettings { SyncPriorityNumber = 760 }, new BedoemmelseLoadStrategy(esasWsContextFactory, loadTimeStrategy, logger), stagingDbDestination, whereToSendTheSyncResults, logger);
             standardEntitiesSyncs.Add(Bedømmelsesync);
 
             // TODO: Fraværsårsag mangler endpoint - afvent SIU
-            //IEsasSyncStrategy FravaersaarsagSync = new EsasSyncStrategy(new SyncStrategySettings { SyncPriorityNumber = 770 }, new FravaersaarsagLoadStrategy(esasWebService, loadTimeStrategy, logger), stagingDbDestination, whereToSendTheLoadResults, logger);
-            //standardEntitiesSyncs.Add(FravaersaarsagSync);
+            IEsasSyncStrategy FravaersaarsagSync = new EsasSyncStrategy(new SyncStrategySettings { SyncPriorityNumber = 770 }, new FravaersaarsagLoadStrategy(esasWsContextFactory, loadTimeStrategy, logger), stagingDbDestination, whereToSendTheSyncResults, logger);
+            standardEntitiesSyncs.Add(FravaersaarsagSync);
 
-            IEsasSyncStrategy StudieinaktivPeriodeSync = new EsasSyncStrategy(new SyncStrategySettings { SyncPriorityNumber = 780 }, new StudieinaktivPeriodeLoadStrategy(esasWebService, loadTimeStrategy, logger), stagingDbDestination, whereToSendTheLoadResults, logger);
+            IEsasSyncStrategy StudieinaktivPeriodeSync = new EsasSyncStrategy(new SyncStrategySettings { SyncPriorityNumber = 780 }, new StudieinaktivPeriodeLoadStrategy(esasWsContextFactory, loadTimeStrategy, logger), stagingDbDestination, whereToSendTheSyncResults, logger);
             standardEntitiesSyncs.Add(StudieinaktivPeriodeSync);
 
-            IEsasSyncStrategy MeritRegistreringSync = new EsasSyncStrategy(new SyncStrategySettings { SyncPriorityNumber = 790 }, new MeritRegistreringLoadStrategy(esasWebService, loadTimeStrategy, logger), stagingDbDestination, whereToSendTheLoadResults, logger);
+            IEsasSyncStrategy MeritRegistreringSync = new EsasSyncStrategy(new SyncStrategySettings { SyncPriorityNumber = 790 }, new MeritRegistreringLoadStrategy(esasWsContextFactory, loadTimeStrategy, logger), stagingDbDestination, whereToSendTheSyncResults, logger);
             standardEntitiesSyncs.Add(MeritRegistreringSync);
 
-            IEsasSyncStrategy PraktikomraadeSync = new EsasSyncStrategy(new SyncStrategySettings { SyncPriorityNumber = 800 }, new PraktikomraadeLoadStrategy(esasWebService, loadTimeStrategy, logger), stagingDbDestination, whereToSendTheLoadResults, logger);
+            IEsasSyncStrategy PraktikomraadeSync = new EsasSyncStrategy(new SyncStrategySettings { SyncPriorityNumber = 800 }, new PraktikomraadeLoadStrategy(esasWsContextFactory, loadTimeStrategy, logger), stagingDbDestination, whereToSendTheSyncResults, logger);
             standardEntitiesSyncs.Add(PraktikomraadeSync);
-            IEsasSyncStrategy PraktikopholdSync = new EsasSyncStrategy(new SyncStrategySettings { SyncPriorityNumber = 810 }, new PraktikopholdLoadStrategy(esasWebService, loadTimeStrategy, logger), stagingDbDestination, whereToSendTheLoadResults, logger);
+            IEsasSyncStrategy PraktikopholdSync = new EsasSyncStrategy(new SyncStrategySettings { SyncPriorityNumber = 810 }, new PraktikopholdLoadStrategy(esasWsContextFactory, loadTimeStrategy, logger), stagingDbDestination, whereToSendTheSyncResults, logger);
             standardEntitiesSyncs.Add(PraktikopholdSync);
 
-            IEsasSyncStrategy BevisgrundlagSync = new EsasSyncStrategy(new SyncStrategySettings { SyncPriorityNumber = 820 }, new BevisgrundlagLoadStrategy(esasWebService, loadTimeStrategy, logger), stagingDbDestination, whereToSendTheLoadResults, logger);
-            standardEntitiesSyncs.Add(BevisgrundlagSync);
-
-            // Øvrige
-            IEsasSyncStrategy OptionSetValueSync = new EsasSyncStrategy(new SyncStrategySettings { SyncPriorityNumber = 1000 }, new OptionSetValueLoadStrategy(esasWebService, logger), stagingDbDestination, whereToSendTheLoadResults, logger);
-            standardEntitiesSyncs.Add(OptionSetValueSync);
-
-            //esasDataLoaders.Add(new AndenAktivitetLoadStrategy(esasWebService, loadTimeStrategy, logger)); --er ikke et endpoint i sig selv
-            //esasDataLoaders.Add(new ErfaringerLoadStrategy(esasWebService, loadTimeStrategy, logger));
-            //esasDataLoaders.Add(new FagpersonsrelationLoadStrategy(esasWebService, loadTimeStrategy, logger));
-            //esasDataLoaders.Add(new GebyrtypePUERelationLoadStrategy(esasWebService, loadTimeStrategy, logger));
-
-            //esasDataLoaders.Add(new HoldStudieforloebLoadStrategy(esasWebService, loadTimeStrategy, logger)); --indeholder ikke modifiedOn timestamp, det er en ren relationstabel
-
-            //esasDataLoaders.Add(new KommunikationLoadStrategy(esasWebService, loadTimeStrategy, logger));
-            //esasDataLoaders.Add(new KurserSkoleopholdLoadStrategy(esasWebService, loadTimeStrategy, logger));
-
-
-            //esasDataLoaders.Add(new ProeveLoadStrategy(esasWebService, loadTimeStrategy, logger));
-            //esasDataLoaders.Add(new PubliceringLoadStrategy(esasWebService, loadTimeStrategy, logger));
-
-            //esasDataLoaders.Add(new UdlandsopholdAnsoegningLoadStrategy(esasWebService, loadTimeStrategy, logger));
-            //esasDataLoaders.Add(new VideregaaendeUddannelseLoadStrategy(esasWebService, loadTimeStrategy, logger));
+            //IEsasSyncStrategy BevisgrundlagSync = new EsasSyncStrategy(new SyncStrategySettings { SyncPriorityNumber = 820 }, new BevisgrundlagLoadStrategy(esasWsContextFactory, loadTimeStrategy, logger), stagingDbDestination, whereToSendTheSyncResults, logger);
+            //standardEntitiesSyncs.Add(BevisgrundlagSync); // Meget stor og omfattende tabel, er ikke sikker på dens forretningsværdi. Undlader den, for now.
 
             return standardEntitiesSyncs;
         }
 
         /// <summary>
-        /// Create Esas staging db destinations. Doing it in reflection saves a bit of typing.
+        /// Create Esas staging db destinations.
         /// </summary>
-        private static IEnumerable<IEsasStagingDbDestination> CreateEsasStagingDbDestinations()
+        private static IEnumerable<IEsasStagingDbDestination> CreateEsasStagingDbDestinations(ILogger logger)
         {
             IList<IEsasStagingDbDestination> strategies = new List<IEsasStagingDbDestination>();
 
-            Type[] typelist = GetTypesInNamespace(Assembly.GetExecutingAssembly(), "Synchronization.ESAS.Synchronizations.EsasStagingDbSyncStrategies").Where(t => t.Name.EndsWith("EsasStagingDbDestination")).ToArray();
+            Type[] typelist = GetTypesInNamespace(Assembly.GetExecutingAssembly(), "KP.Synchronization.ESAS.Synchronizations.EsasStagingDbSyncStrategies").Where(t => t.Name.EndsWith("EsasStagingDbDestination")).ToArray();
             for (int i = 0; i < typelist.Length; i++)
             {
-                var instance = Activator.CreateInstance(typelist[i]);
+                var instance = Activator.CreateInstance(typelist[i], new object[] { logger });
                 strategies.Add((IEsasStagingDbDestination)instance);
             }
 
@@ -321,9 +351,9 @@ namespace Synchronization.ESAS
         /// </summary>
         private static ILogger InitializeLogger()
         {
-            // TODO: roll your own logger
-            return NullLogger.Instance;
+            return NullLogger.Instance; // TODO: roll your own
         }
+
 
         private static Type[] GetTypesInNamespace(Assembly assembly, string nameSpace)
         {

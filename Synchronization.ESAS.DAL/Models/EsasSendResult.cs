@@ -6,8 +6,8 @@ namespace Synchronization.ESAS.DAL.Models
     {
         public EsasOperationResultStatus SendToDestinationStatus { get; set; }
         public long? SendTimeMs { get; set; }
-        public DateTime? SendStartTime { get; set; }
-        public DateTime? SendEndTime { get; set; }
+        public DateTime? SendStartTimeUTC { get; set; }
+        public DateTime? SendEndTimeUTC { get; set; }
         public string SendDestinationStrategyName { get; set; }
     }
 }

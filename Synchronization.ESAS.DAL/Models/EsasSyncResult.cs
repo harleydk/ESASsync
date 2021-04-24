@@ -14,7 +14,7 @@ namespace Synchronization.ESAS.DAL.Models
         [Key]
         [Required]
         public int Id { get; set; }
-        public DateTime SyncStartTime { get; set; }
+        public DateTime SyncStartTimeUTC { get; set; }
 
         public EsasLoadResult esasLoadResult { get; set; }
 

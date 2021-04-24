@@ -7,78 +7,82 @@ using System;
 
 namespace Synchronization.ESAS.Synchronizations
 {
-
     public class EsasSyncStrategy : IEsasSyncStrategy
     {
-        private readonly SyncStrategySettings _syncStrategySettings;
-        private readonly IEsasEntitiesLoaderStrategy _esasEntitiesLoaderStrategy;
         private readonly IEsasSyncDestination _esasSyncDestination;
         private readonly ISyncResultsDestination _syncResultsDestination;
         private readonly ILogger _logger;
 
-        public SyncStrategySettings SyncStrategySettings => _syncStrategySettings;
+        public SyncStrategySettings SyncStrategySettings { get; }
+
+        public IEsasEntitiesLoaderStrategy EsasEntitiesLoaderStrategy { get; }
 
         public EsasSyncStrategy(SyncStrategySettings syncStrategySettings, IEsasEntitiesLoaderStrategy esasEntitiesLoaderStrategy, IEsasSyncDestination syncDestination, ISyncResultsDestination syncResultsDestination, ILogger logger)
         {
             _syncResultsDestination = syncResultsDestination;
             _logger = logger;
-            _syncStrategySettings = syncStrategySettings;
-            _esasEntitiesLoaderStrategy = esasEntitiesLoaderStrategy;
+            SyncStrategySettings = syncStrategySettings;
+            EsasEntitiesLoaderStrategy = esasEntitiesLoaderStrategy;
             _esasSyncDestination = syncDestination;
         }
 
         public override string ToString()
         {
-            string representation = $"{this.GetType().Name}(entityLoadStrategy={_esasEntitiesLoaderStrategy.GetType().Name}|syncDestination={_esasSyncDestination.GetType().Name}";
+            string representation = $"{this.GetType().Name}(entityLoadStrategy={EsasEntitiesLoaderStrategy.GetType().Name}|syncDestination={_esasSyncDestination.GetType().Name}";
             return representation;
         }
-
+        
         public void ExecuteSyncStrategy()
         {
-            _logger.LogInformation($"Executing sync-strategy with corresponding load-strategy {this._esasEntitiesLoaderStrategy.GetType().Name} and destination of {_syncResultsDestination.GetType().Name}");
-            EsasSyncResult syncResult = new EsasSyncResult(); 
+            _logger.LogInformation($"Executing sync-strategy with corresponding load-strategy {this.EsasEntitiesLoaderStrategy.GetType().Name} and destination of {_syncResultsDestination.GetType().Name}");
+            EsasSyncResult syncResult = new EsasSyncResult() { SyncStartTimeUTC = DateTime.UtcNow };
+            _syncResultsDestination.PrepareSyncResult(syncResult);
+
             try
             {
-                syncResult.SyncStartTime = DateTime.Now;
-                syncResult.SyncStrategyName = this._esasEntitiesLoaderStrategy.GetType().Name;
-                _syncResultsDestination.PrepareSyncResult(syncResult);
+                syncResult.SyncStartTimeUTC = DateTime.UtcNow;
+                syncResult.SyncStrategyName = this.EsasEntitiesLoaderStrategy.GetType().Name;
 
-                int numberOfRecordsReadForCurrentIteration = 0;
-                int numberOfRecordsToReadPerIteration = 1000;
-                int iterationCounter = 0;
+                string syncStratMessage = $"Sync-strategy: loading {this.EsasEntitiesLoaderStrategy.GetType().Name} - start";
+                _logger.LogInformation(syncStratMessage);
 
-                // TODO: foretag sammenligning med loadede id-værdier. Måske indeholder destinationen records som er hard-deleted fra kilden? burde ikke være tilfældet. Men...
-                //List<string> loadedIdValues = new List<string>(); // Kan bruges til sammenligning med destinationen - måske indeholder destinationen records som er hard-slettet fra kilden.
+                var esasLoad = EsasEntitiesLoaderStrategy.Load();
+                if (esasLoad.esasLoadResult.EsasLoadStatus != EsasOperationResultStatus.OperationSuccesful)
+                    throw new Exception($"Iterative load from the web-service reported a non-succesful operation - {esasLoad.esasLoadResult.EsasLoadStatus}");
 
-                do
+                syncStratMessage = $"Sync-strategy: loading {this.EsasEntitiesLoaderStrategy.GetType().Name} - end";
+                _logger.LogInformation(syncStratMessage);
+
+                updateSyncLoadResult(syncResult: ref syncResult, iterativeLoadResult: esasLoad.esasLoadResult);
+
+                if (esasLoad.loadedObjects == null || esasLoad.loadedObjects.Length == 0)
                 {
-                    _logger.LogInformation($"Henter data - {numberOfRecordsToReadPerIteration} objekter fra index {numberOfRecordsToReadPerIteration * iterationCounter}.");
-
-                    // hent N antal objekter per iteration, og send dem kontinuérligt til destinationen.
-                    var iterativeLoadResult = _esasEntitiesLoaderStrategy.Load(indexToStartLoadFrom: numberOfRecordsToReadPerIteration * iterationCounter, howManyRecordsToGet: numberOfRecordsToReadPerIteration);
-                    if (iterativeLoadResult.esasLoadResult.EsasLoadStatus != EsasOperationResultStatus.OperationSuccesful)
-                        throw new Exception($"Iterative load from the web-service reported a non-succesful operation - {iterativeLoadResult.esasLoadResult.EsasLoadStatus}");
-                    
-                    updateSyncLoadResult(syncResult: ref syncResult, iterativeLoadResult: iterativeLoadResult.esasLoadResult);
-
-                    if (iterativeLoadResult.loadedObjects == null || iterativeLoadResult.loadedObjects.Length == 0)
-                    {
-                        string noObjectsLoadedMsg = $"No further objects were loaded for loader-strategy {_esasEntitiesLoaderStrategy.GetType().Name}";
-                        _logger.LogInformation(noObjectsLoadedMsg);
-                        syncResult.esasLoadResult.Message = noObjectsLoadedMsg;
-                        break;
-                    }
-
-                    var iterativeDeliveryResult = _esasSyncDestination.Deliver(iterativeLoadResult.loadedObjects);
-                    if (iterativeDeliveryResult.SendToDestinationStatus != EsasOperationResultStatus.OperationSuccesful)
-                        throw new Exception($"Iterative send-to-destination reported a non-succesful operation - {iterativeDeliveryResult.SendToDestinationStatus}");
-                    
-                    updateSendLoadResult(syncResult: ref syncResult, iterativeDeliveryResult: iterativeDeliveryResult);
-
-                    numberOfRecordsReadForCurrentIteration = iterativeLoadResult.loadedObjects.Length;
-                    iterationCounter += 1;
+                    string noObjectsLoadedMsg = $"No further objects were loaded for loader-strategy {EsasEntitiesLoaderStrategy.GetType().Name}";
+                    _logger.LogInformation(noObjectsLoadedMsg);
+                    syncResult.esasLoadResult.Message = noObjectsLoadedMsg;
                 }
-                while (!(numberOfRecordsToReadPerIteration > numberOfRecordsReadForCurrentIteration)); // stop når der ikke længere er flere records at hente.
+                else
+                {
+                    try
+                    {
+                        syncStratMessage = $"Sync-strategy: delivering {_esasSyncDestination.GetType().Name} from loaded {this.EsasEntitiesLoaderStrategy.GetType().Name} - start";
+                        _logger.LogInformation(syncStratMessage);
+
+                        var deliveryResult = _esasSyncDestination.Deliver(esasLoad.loadedObjects);
+                        if (deliveryResult.SendToDestinationStatus != EsasOperationResultStatus.OperationSuccesful)
+                            throw new Exception($"send-to-destination reported a non-succesful operation - {deliveryResult.SendToDestinationStatus}");
+
+                        syncStratMessage = $"Sync-strategy: delivering {_esasSyncDestination.GetType().Name} from loaded {this.EsasEntitiesLoaderStrategy.GetType().Name} - end";
+                        _logger.LogInformation(syncStratMessage);
+
+                        updateSendLoadResult(syncResult: ref syncResult, iterativeDeliveryResult: deliveryResult);
+                    }
+                    catch (Exception ex)
+                    {
+                        // TODO: log and recover
+                        throw ex;
+                    }
+                }
             }
             catch (Exception ex)
             {
@@ -87,26 +91,27 @@ namespace Synchronization.ESAS.Synchronizations
                 throw ex;
             }
 
-            _logger.LogInformation($"Executing sync-strategy with corresponding load-strategy {this._esasEntitiesLoaderStrategy.GetType().Name} - done!");
+            _logger.LogInformation($"Executing sync-strategy with corresponding load-strategy {this.EsasEntitiesLoaderStrategy.GetType().Name} - done!");
             _syncResultsDestination.UpdateResult(syncResult);
+            _logger.LogInformation($"Sync result update");
         }
 
         private void updateSendLoadResult(ref EsasSyncResult syncResult, EsasSendResult iterativeDeliveryResult)
         {
-            if (syncResult.esasSendResult.SendStartTime == null)
+            if (syncResult.esasSendResult.SendStartTimeUTC == null)
             {
                 syncResult.esasSendResult = new EsasSendResult()
                 {
                     SendDestinationStrategyName = iterativeDeliveryResult.SendDestinationStrategyName,
-                    SendStartTime = iterativeDeliveryResult.SendStartTime,
-                    SendEndTime = iterativeDeliveryResult.SendEndTime,
+                    SendStartTimeUTC = iterativeDeliveryResult.SendStartTimeUTC,
+                    SendEndTimeUTC = iterativeDeliveryResult.SendEndTimeUTC,
                     SendTimeMs = iterativeDeliveryResult.SendTimeMs,
                     SendToDestinationStatus = iterativeDeliveryResult.SendToDestinationStatus
                 };
             }
             else
             {
-                syncResult.esasSendResult.SendEndTime = iterativeDeliveryResult.SendEndTime;
+                syncResult.esasSendResult.SendEndTimeUTC = iterativeDeliveryResult.SendEndTimeUTC;
                 syncResult.esasSendResult.SendTimeMs += iterativeDeliveryResult.SendTimeMs;
                 syncResult.esasSendResult.SendToDestinationStatus = iterativeDeliveryResult.SendToDestinationStatus;
             }
@@ -119,14 +124,14 @@ namespace Synchronization.ESAS.Synchronizations
         /// <param name="iterativeLoadResult"></param>
         private void updateSyncLoadResult(ref EsasSyncResult syncResult, EsasLoadResult iterativeLoadResult)
         {
-            if (syncResult.esasLoadResult.LoadStartTime == null)
+            if (syncResult.esasLoadResult.LoadStartTimeUTC == null)
             {
                 syncResult.esasLoadResult = new EsasLoadResult()
                 {
-                    ModifiedOnDateTimeValue = iterativeLoadResult.ModifiedOnDateTimeValue,
+                    ModifiedOnDateTimeUTC = iterativeLoadResult.ModifiedOnDateTimeUTC,
                     EsasLoadStatus = iterativeLoadResult.EsasLoadStatus,
-                    LoadEndTime = iterativeLoadResult.LoadEndTime,
-                    LoadStartTime = iterativeLoadResult.LoadStartTime,
+                    LoadEndTimeUTC = iterativeLoadResult.LoadEndTimeUTC,
+                    LoadStartTimeUTC = iterativeLoadResult.LoadStartTimeUTC,
                     LoaderStrategyName = iterativeLoadResult.LoaderStrategyName,
                     NumberOfObjectsLoaded = iterativeLoadResult.NumberOfObjectsLoaded,
                     LoadTimeMs = iterativeLoadResult.LoadTimeMs,
@@ -136,8 +141,8 @@ namespace Synchronization.ESAS.Synchronizations
             else
             {
                 syncResult.esasLoadResult.LoadTimeMs += iterativeLoadResult.LoadTimeMs;
-                syncResult.esasLoadResult.LoadEndTime = iterativeLoadResult.LoadEndTime;
-                syncResult.esasLoadResult.ModifiedOnDateTimeValue = iterativeLoadResult.ModifiedOnDateTimeValue;
+                syncResult.esasLoadResult.LoadEndTimeUTC = iterativeLoadResult.LoadEndTimeUTC;
+                syncResult.esasLoadResult.ModifiedOnDateTimeUTC = iterativeLoadResult.ModifiedOnDateTimeUTC;
                 syncResult.esasLoadResult.EsasLoadStatus = iterativeLoadResult.EsasLoadStatus;
                 syncResult.esasLoadResult.Message = iterativeLoadResult.Message;
                 syncResult.esasLoadResult.NumberOfObjectsLoaded += iterativeLoadResult.NumberOfObjectsLoaded;

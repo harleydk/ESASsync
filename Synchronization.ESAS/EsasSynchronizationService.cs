@@ -1,7 +1,7 @@
-﻿using Synchronization.ESAS.DAL;
+﻿using Microsoft.Extensions.Logging;
+using Synchronization.ESAS.DAL;
 using Synchronization.ESAS.DAL.Models;
 using Synchronization.ESAS.UtilityComponents;
-using Microsoft.Extensions.Logging;
 using System;
 using System.Collections.Generic;
 using System.Configuration;
@@ -50,12 +50,18 @@ namespace Synchronization.ESAS
 
         public void PerformSynchronization(object sender, System.Timers.ElapsedEventArgs e)
         {
-            _logger.LogInformation("PerformSynchronization() was called...");
-
             try
             {
-                if (_isSynchronizationActive) // do nothing if a sync is already in progress.
+                _logger.LogInformation("PerformSynchronization() was called...");
+
+                if (_isSynchronizationActive)
+                {
+                    // do nothing if a sync is already in progress.
+                    _logger.LogInformation("Sync is in progress - won't start a new one.");
                     return;
+                }
+
+                var syncBundlesToRun = _syncStrategyBundles.Where(bundle => bundle.IsTimeToExecute(DateTime.Now));
 
                 // for every '_minuteIntervalBetweenEsasWsHealthcheck' minutes, do a health-check
                 if (DateTime.Now.Minute % _minuteIntervalBetweenEsasWsHealthcheck == 0)
@@ -78,26 +84,36 @@ namespace Synchronization.ESAS
                     }
                 }
 
-                _isSynchronizationActive = true;
-                executeSyncStrategies();
-                _isSynchronizationActive = false;
+                if (syncBundlesToRun.Any())
+                {
+                    _isSynchronizationActive = true;
+                    executeSyncBundles(syncBundlesToRun);
+                    _isSynchronizationActive = false;
+                }
             }
             catch (Exception ex)
             {
                 // Allow the service to continue, but do log the error.
                 _logger.LogError("ERROR: " + ex.Message, ex);
+                if (ex.InnerException != null)
+                    _logger.LogError("ERROR: " + ex.InnerException.Message, ex.InnerException);
                 _isSynchronizationActive = false;
             }
         }
-        public void executeSyncStrategies()
+
+        public void executeSyncBundles(IEnumerable<SyncStrategyBundle> syncBundlesToRun)
         {
-            var syncBundlesToRun = _syncStrategyBundles.Where(bundle => bundle.IsTimeToExecute(DateTime.Now));
             foreach (var syncBundle in syncBundlesToRun)
             {
-                string syncStartMessage = $"{System.Environment.MachineName}: Executing sync-bundle {syncBundle.GetType().Name}.";
-                System.Diagnostics.Debug.WriteLine(syncStartMessage);
-                _logger.LogInformation(syncStartMessage);
+                string syncStratMessage = $"Sync-bundle: Executing sync-bundle {syncBundle.GetType().Name} - start";
+                System.Diagnostics.Debug.WriteLine(syncStratMessage);
+                _logger.LogInformation(syncStratMessage);
+
                 syncBundle.ExecuteSync();
+
+                syncStratMessage = $"Sync-bundle: Executing sync-bundle {syncBundle.GetType().Name} - end";
+                System.Diagnostics.Debug.WriteLine(syncStratMessage);
+                _logger.LogInformation(syncStratMessage);
             }
         }
 

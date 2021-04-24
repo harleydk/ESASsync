@@ -10,6 +10,11 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Microsoft.Extensions.Logging;
+using System.IO;
+using System.Diagnostics;
+using Newtonsoft.Json;
+using esas.Dynamics.Models.Contracts;
+using Synchronization.ESAS.DAL;
 
 /*
 	Disse klasser er auto-genererede, på basis af deres korresponderende T4-template. 
@@ -21,6 +26,7 @@ namespace Synchronization.ESAS.Synchronizations.EntityLoaderStrategies
 	 string[] entityNames = new string[] {
 "Adgangskrav",
 "Afdeling",
+"Afdelingsniveau",
 "Afslagsbegrundelse",
 "Aktivitetsudbud",
 "AndenAktivitet",
@@ -42,11 +48,11 @@ namespace Synchronization.ESAS.Synchronizations.EntityLoaderStrategies
 "Fagpersonsrelation",
 "Fravaersaarsag",
 "Gebyrtype",
-//"", // Does not contains modifiedOn timestamp
 "GennemfoerelsesUddannelseselement",
 "GymnasielleFagkrav",
 "GymnasielleKarakterkrav",
 "Hold",
+"Indskrivningsform",
 "InstitutionVirksomhed",
 "Institutionsoplysninger",
 "Internationalisering",
@@ -54,6 +60,7 @@ namespace Synchronization.ESAS.Synchronizations.EntityLoaderStrategies
 "KOTGruppeTilmelding",
 "Karakter",
 "Kommunikation",
+"Kommune",
 "KurserSkoleophold",
 "Kvalifikationskriterie",
 "Kvalifikationspoint",
@@ -72,11 +79,13 @@ namespace Synchronization.ESAS.Synchronizations.EntityLoaderStrategies
 "Proeve",
 "Publicering",
 "RelationsStatus",
+"Rekvirenttype",
+"Specialisering",
+"Samlaesning",
 "StruktureltUddannelseselement",
 "Studieforloeb",
 "StudieinaktivPeriode",
 "SystemUser",
-//"UdbudtPlanlaegningsuddannelseselement",
 "Uddannelsesaktivitet",
 "Uddannelsesstruktur",
 "UdlandsopholdAnsoegning",
@@ -90,16 +99,100 @@ namespace Synchronization.ESAS.Synchronizations.EntityLoaderStrategies
 	// Denne klasse er auto-genereret. Enhver ændring vil blive overskrevet når auto-generingen kører på ny.
     public class <#=entityName#>LoadStrategy : BaseLoadStrategy
     {
-         public <#=entityName#>LoadStrategy(Container esasContainer, ILoadTimeStrategy loadTimeStrategy, ILogger logger) 
-			: base(esasContainer, loadTimeStrategy, logger)
+         public <#=entityName#>LoadStrategy(EsasWsContextFactory esasWebServiceContextFactory, ILoadTimeStrategy loadTimeStrategy, ILogger logger) 
+			: base(esasWebServiceContextFactory, loadTimeStrategy, logger)
         {
         }
 
-        protected override object[] LoadObjects(DateTime loadTimeCutoff, int indexToStartLoadFrom, int howManyRecordsToGet)
+        protected override object[] LoadObjects(DateTime loadTimeCutoff)
         {
-            var modifiedObjects = _esasContainer.<#=entityName#>.Where(t => t.ModifiedOn >= loadTimeCutoff).Skip(indexToStartLoadFrom).Take(howManyRecordsToGet).ToArray();
-            return modifiedObjects;
+            var esasContainer = _esasWebServiceContextFactory.Create();
+            // design continuation here
+            List<<#=entityName#>> loadedObjectsListe = new List<<#=entityName#>>();
+            Microsoft.OData.Client.DataServiceQueryContinuation<<#=entityName#>> token = null;
+
+            string datetimeoffSetFromLoadtimeCutOff = loadTimeCutoff.ToString("yyyy-MM-ddTHH:mm:ssZ");
+            var response = esasContainer.<#=entityName#>.AddQueryOption("$filter", $"ModifiedOn gt {datetimeoffSetFromLoadtimeCutOff}").Execute() as Microsoft.OData.Client.QueryOperationResponse<<#=entityName#>>;
+
+            loadedObjectsListe.AddRange(response.ToList());
+            if ( ! loadedObjectsListe.Any())
+                return null;
+            
+            while ((token = response.GetContinuation()) != null)
+            {
+                System.Diagnostics.Debug.WriteLine("Continuation-token available, retrieving next batch.");
+                esasContainer = _esasWebServiceContextFactory.Create();
+                response = esasContainer.Execute<<#=entityName#>>(token.NextLinkUri) as Microsoft.OData.Client.QueryOperationResponse<<#=entityName#>>;
+                loadedObjectsListe.AddRange(response.ToList());
+            }
+
+            return loadedObjectsListe.ToArray();
         }
+
+        /// <summary>
+        /// This method is only used for initial load of ESAS data - will become useless once we're in production.
+        /// </summary>
+        protected override object[] LoadObjectsAndPersistToDisk()
+        {
+            int i = 0; int j = 0;
+            var esasContainer = _esasWebServiceContextFactory.Create();
+
+            List<<#=entityName#>> loadedObjectsListe = new List<<#=entityName#>>();
+            Microsoft.OData.Client.DataServiceQueryContinuation<<#=entityName#>> token = null;
+
+            var response = esasContainer.<#=entityName#>.Execute() as Microsoft.OData.Client.QueryOperationResponse<<#=entityName#>>;
+            loadedObjectsListe.AddRange(response.ToList());
+            if ( loadedObjectsListe.Any())
+            {
+                j = loadedObjectsListe.Count();
+                PersistToFile(i,j,ref loadedObjectsListe);
+            }
+            else
+                return null;
+            
+            System.Diagnostics.Debug.WriteLine(loadedObjectsListe.Count());
+         
+            while ((token = response.GetContinuation()) != null)
+            {
+               Stopwatch st = new Stopwatch();
+                st.Start();
+                       esasContainer = _esasWebServiceContextFactory.Create();
+                List<<#=entityName#>> loadedObjectsListen = new List<<#=entityName#>>();
+                response = esasContainer.Execute<<#=entityName#>>(token.NextLinkUri) as Microsoft.OData.Client.QueryOperationResponse<<#=entityName#>>;
+                loadedObjectsListen.AddRange(response.ToList());
+                if ( loadedObjectsListen.Any())
+            {
+                i = j;
+                j = j + loadedObjectsListen.Count();
+                PersistToFile(i,j,ref loadedObjectsListen);
+                loadedObjectsListen = null;
+            }
+
+
+                // loadedObjectsListe.AddRange(response.ToList()); - only persist to disc, for now.
+               st.Stop();
+               System.Diagnostics.Debug.WriteLine(j + "-" + st.Elapsed.Seconds);
+            }
+            
+             System.Diagnostics.Debug.WriteLine($"*** total objects written to disk was {j} ***");
+            //return loadedObjectsListe.ToArray();
+            return null;
+        }
+
+        
+        private void PersistToFile(int indexToStartLoadFrom, int howManyRecordsToGet, ref List<<#=entityName#>> loadedObjectsListe)
+        {
+             string entityName = "<#=entityName#>";
+              if (!Directory.Exists($@"E:\ESAS_prod_fileBackupsAfPPdataUge8\{entityName}"))
+                Directory.CreateDirectory($@"E:\ESAS_prod_fileBackupsAfPPdataUge8\{entityName}");
+
+            string objectsJson = JsonConvert.SerializeObject(loadedObjectsListe, Formatting.Indented);
+            if ( !File.Exists($@"E:\ESAS_prod_fileBackupsAfPPdataUge8\{entityName}\{entityName}{indexToStartLoadFrom.ToString()}-{howManyRecordsToGet.ToString()}.json"))
+                File.WriteAllText($@"E:\ESAS_prod_fileBackupsAfPPdataUge8\{entityName}\{entityName}{indexToStartLoadFrom.ToString()}-{howManyRecordsToGet.ToString()}.json", objectsJson );
+
+        }
+
+
     }
 
 

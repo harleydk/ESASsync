@@ -1,8 +1,4 @@
-﻿/*
-	Disse klasser er auto-genererede, på basis af deres korresponderende T4-template. 
-	Hvis der skal rettes i klasserne, skal rettelserne foregå i template'n.
-*/
-using Synchronization.ESAS.DAL.Models;
+﻿using Synchronization.ESAS.DAL.Models;
 
 namespace Synchronization.ESAS.Synchronizations.EntityLoaderStrategies
 {
@@ -18,4 +14,4 @@ namespace Synchronization.ESAS.Synchronizations.EntityLoaderStrategies
             // do nothing
         }
     }
-} // namespace end
+}

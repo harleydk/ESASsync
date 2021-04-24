@@ -2,8 +2,9 @@
 {
     public interface IEsasSyncStrategy
     {
+        IEsasEntitiesLoaderStrategy EsasEntitiesLoaderStrategy { get; }
+
         void ExecuteSyncStrategy();
     }
-
 }
 
