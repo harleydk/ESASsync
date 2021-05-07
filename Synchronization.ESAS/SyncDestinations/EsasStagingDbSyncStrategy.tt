@@ -120,7 +120,7 @@ entitiesDictionary.Add("VideregaaendeUddannelse","esas_ansoegning_videregaaende_
 			_logger.LogInformation("Klar til opdatering/tilføjelse af objekter.");
 			System.Diagnostics.Debug.WriteLine("Delivering by " + this.GetType().Name);
 			// initialize compare-logic
-		    cc.CompareChildren = false;
+		    cc.CompareChildren = true; // tillader også sammenligning af objekter pakket i en System.Nullable
             cc.IgnoreObjectTypes = true; // ignorer objekt-type - fordi objekter fra Entity Frameworket får en 'dynamic' type, som ikke er sammenlignelig med kp.domain-typen.
             compareLogic = new CompareLogic(cc);
 
